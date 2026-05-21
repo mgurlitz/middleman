@@ -549,8 +549,10 @@ func (m *Manager) gitWithInput(
 	cmd.Env = append(gitenv.StripAll(os.Environ()),
 		"GIT_TERMINAL_PROMPT=0",
 		"GIT_CONFIG_NOSYSTEM=1",
-		"GIT_CONFIG_GLOBAL="+os.DevNull,
 	)
+	if nullConfig := gitenv.NullConfigPath(); nullConfig != "" {
+		cmd.Env = append(cmd.Env, "GIT_CONFIG_GLOBAL="+nullConfig)
+	}
 	configCount := 0
 	addGitConfig := func(key, value string) {
 		cmd.Env = append(cmd.Env,

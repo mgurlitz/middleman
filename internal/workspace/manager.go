@@ -2196,9 +2196,11 @@ func workspaceGitCommand(
 	}
 	cmd.Env = append(
 		gitenv.StripAll(os.Environ()),
-		"GIT_CONFIG_GLOBAL="+os.DevNull,
-		"GIT_CONFIG_SYSTEM="+os.DevNull,
+		"GIT_CONFIG_NOSYSTEM=1",
 	)
+	if nullConfig := gitenv.NullConfigPath(); nullConfig != "" {
+		cmd.Env = append(cmd.Env, "GIT_CONFIG_GLOBAL="+nullConfig)
+	}
 	return cmd
 }
 
