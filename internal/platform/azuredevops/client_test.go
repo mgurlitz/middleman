@@ -53,6 +53,37 @@ func TestClientAttachesBearerTokenFromTokenSource(t *testing.T) {
 	assert.Equal("acme/platform/widgets", repo.Ref.RepoPath)
 }
 
+func TestClientGetRepositoryEncodesAzurePathSegmentsWithSpacesOnce(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	var escapedPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		escapedPath = r.URL.EscapedPath()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"repo-1","name":"Space Repo","webUrl":"https://dev.azure.com/Acme%20Org/Payments%20Team/_git/Space%20Repo","remoteUrl":"https://dev.azure.com/Acme%20Org/Payments%20Team/_git/Space%20Repo","defaultBranch":"refs/heads/main","project":{"name":"Payments Team","visibility":"private"}}`))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(
+		"dev.azure.com",
+		WithBaseURLForTesting(server.URL),
+		WithTokenSourceForTesting(staticTokenSource("azure-token")),
+	)
+	require.NoError(err)
+
+	repo, err := client.GetRepository(t.Context(), platform.RepoRef{
+		Platform: platform.KindAzureDevOps,
+		Host:     "dev.azure.com",
+		Owner:    "Acme Org/Payments Team",
+		Name:     "Space Repo",
+		RepoPath: "Acme Org/Payments Team/Space Repo",
+	})
+	require.NoError(err)
+	assert.Equal("/Acme%20Org/Payments%20Team/_apis/git/repositories/Space%20Repo", escapedPath)
+	assert.Equal("Acme Org/Payments Team/Space Repo", repo.Ref.RepoPath)
+}
+
 func TestAzureCLITokenSourceUsesAzureCLICommand(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

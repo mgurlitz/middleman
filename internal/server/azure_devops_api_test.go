@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -260,6 +261,128 @@ func TestAPIAzureDevOpsReadOnlySyncPersistsThroughServer(t *testing.T) {
 		summary, err := srv.workspaces.GetSummary(ctx, created.ID)
 		return err == nil && summary != nil && summary.Status == "ready"
 	}, 5*time.Second, 25*time.Millisecond)
+}
+
+func TestAPIAzureDevOpsSyncHandlesSpacesInRepoIdentity(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+
+	var requestedPaths []string
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestedPaths = append(requestedPaths, r.URL.EscapedPath())
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.EscapedPath() {
+		case "/Acme%20Org/Payments%20Team/_apis/git/repositories/Space%20Repo":
+			_, _ = w.Write([]byte(`{
+				"id": "repo-guid",
+				"name": "Space Repo",
+				"webUrl": "https://dev.azure.com/Acme%20Org/Payments%20Team/_git/Space%20Repo",
+				"remoteUrl": "https://dev.azure.com/Acme%20Org/Payments%20Team/_git/Space%20Repo",
+				"defaultBranch": "refs/heads/main",
+				"project": {
+					"id": "project-guid",
+					"name": "Payments Team",
+					"visibility": "private",
+					"lastUpdateTime": "2026-05-21T12:00:00Z"
+				}
+			}`))
+		case "/Acme%20Org/Payments%20Team/_apis/git/repositories/Space%20Repo/pullRequests":
+			assert.Equal("active", r.URL.Query().Get("searchCriteria.status"))
+			_, _ = w.Write([]byte(`{
+				"count": 1,
+				"value": [{
+					"pullRequestId": 17,
+					"status": "active",
+					"title": "Handle spaces in Azure DevOps repo paths",
+					"description": "POC body",
+					"creationDate": "2026-05-21T12:00:00Z",
+					"createdBy": {
+						"displayName": "Ada Lovelace",
+						"uniqueName": "ada@example.com"
+					},
+					"sourceRefName": "refs/heads/feature/space-paths",
+					"targetRefName": "refs/heads/main",
+					"mergeStatus": "succeeded",
+					"repository": {
+						"id": "repo-guid",
+						"name": "Space Repo",
+						"webUrl": "https://dev.azure.com/Acme%20Org/Payments%20Team/_git/Space%20Repo",
+						"remoteUrl": "https://dev.azure.com/Acme%20Org/Payments%20Team/_git/Space%20Repo",
+						"defaultBranch": "refs/heads/main",
+						"project": {
+							"id": "project-guid",
+							"name": "Payments Team",
+							"visibility": "private",
+							"lastUpdateTime": "2026-05-21T12:00:00Z"
+						}
+					},
+					"_links": {
+						"web": {"href": "https://dev.azure.com/Acme%20Org/Payments%20Team/_git/Space%20Repo/pullrequest/17"}
+					}
+				}]
+			}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer api.Close()
+
+	database := dbtest.Open(t)
+	clones := gitclone.New(t.TempDir(), nil)
+	provider, err := azuredevops.NewClient(
+		platform.DefaultAzureDevOpsHost,
+		azuredevops.WithBaseURLForTesting(api.URL),
+		azuredevops.WithTokenSource(azureDevOpsStaticToken("azure-token")),
+	)
+	require.NoError(err)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+
+	repo := ghclient.RepoRef{
+		Platform:     platform.KindAzureDevOps,
+		PlatformHost: platform.DefaultAzureDevOpsHost,
+		Owner:        "Acme Org/Payments Team",
+		Name:         "Space Repo",
+		RepoPath:     "Acme Org/Payments Team/Space Repo",
+	}
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry,
+		database,
+		clones,
+		[]ghclient.RepoRef{repo},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{Clones: clones})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	syncer.RunOnce(ctx)
+
+	repoRow, err := database.GetRepoByHostOwnerName(ctx, repo.PlatformHost, repo.Owner, repo.Name)
+	require.NoError(err)
+	require.NotNil(repoRow)
+	assert.Equal("Acme Org/Payments Team", repoRow.Owner)
+	assert.Equal("Space Repo", repoRow.Name)
+
+	rawPulls := doJSON(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/v1/pulls/azure_devops/"+url.PathEscape(repo.Owner)+"/"+url.PathEscape(repo.Name),
+		nil,
+	)
+	require.Equal(http.StatusOK, rawPulls.Code, rawPulls.Body.String())
+	var pulls []mergeRequestResponse
+	require.NoError(json.NewDecoder(rawPulls.Body).Decode(&pulls))
+	require.Len(pulls, 1)
+	assert.Equal("Acme Org/Payments Team", pulls[0].RepoOwner)
+	assert.Equal("Space Repo", pulls[0].RepoName)
+	assert.Equal("Handle spaces in Azure DevOps repo paths", pulls[0].Title)
+	assert.Contains(requestedPaths, "/Acme%20Org/Payments%20Team/_apis/git/repositories/Space%20Repo")
+	assert.Contains(requestedPaths, "/Acme%20Org/Payments%20Team/_apis/git/repositories/Space%20Repo/pullRequests")
 }
 
 func setupAzureDevOpsCloneFixture(t *testing.T) (string, string, string) {

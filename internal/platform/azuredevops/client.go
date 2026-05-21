@@ -315,11 +315,12 @@ func (c *Client) requestJSON(
 	if err != nil {
 		return fmt.Errorf("parse base URL: %w", err)
 	}
-	escaped := make([]string, 0, len(segments))
+	clean := make([]string, 0, len(segments))
 	for _, segment := range segments {
-		escaped = append(escaped, url.PathEscape(strings.Trim(segment, "/")))
+		clean = append(clean, strings.Trim(segment, "/"))
 	}
-	base.Path = strings.TrimRight(base.Path, "/") + "/" + strings.Join(escaped, "/")
+	base.Path = strings.TrimRight(base.Path, "/") + "/" + strings.Join(clean, "/")
+	base.RawPath = ""
 	if query == nil {
 		query = url.Values{}
 	}
