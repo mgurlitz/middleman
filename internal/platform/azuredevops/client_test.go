@@ -84,6 +84,34 @@ func TestAzureCLITokenSourceUsesAzureCLICommand(t *testing.T) {
 	assert.Contains(string(data), "account get-access-token --resource "+azureDevOpsResource+" --query accessToken -o tsv")
 }
 
+func TestAzureCLITokenSourceDoesNotLeakStdoutTokenOnFailure(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	azPath := filepath.Join(dir, "az")
+	if runtime.GOOS == "windows" {
+		azPath += ".cmd"
+	}
+	script := "#!/bin/sh\n" +
+		"printf '%s\\n' 'secret-token'\n" +
+		"printf '%s\\n' 'login expired' 1>&2\n" +
+		"exit 1\n"
+	if runtime.GOOS == "windows" {
+		script = "@echo off\r\n" +
+			"echo secret-token\r\n" +
+			"echo login expired 1>&2\r\n" +
+			"exit /b 1\r\n"
+	}
+	require.NoError(os.WriteFile(azPath, []byte(script), 0o755))
+	t.Setenv("PATH", dir)
+
+	_, err := (azureCLITokenSource{}).Token(context.Background())
+	require.Error(err)
+	assert.Contains(err.Error(), "login expired")
+	assert.NotContains(err.Error(), "secret-token")
+}
+
 func TestClientCapabilitiesExposeReadOnlyAzureDevOpsPOC(t *testing.T) {
 	client, err := NewClient(
 		"dev.azure.com",

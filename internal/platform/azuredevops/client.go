@@ -1,6 +1,7 @@
 package azuredevops
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -433,9 +434,11 @@ func (azureCLITokenSource) Token(ctx context.Context) (string, error) {
 		"-o",
 		"tsv",
 	)
-	out, err := procutil.CombinedOutput(cmdCtx, cmd, "fetch Azure DevOps access token")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := procutil.Output(cmdCtx, cmd, "fetch Azure DevOps access token")
 	if err != nil {
-		msg := strings.TrimSpace(string(out))
+		msg := strings.TrimSpace(stderr.String())
 		if msg == "" {
 			msg = err.Error()
 		}
