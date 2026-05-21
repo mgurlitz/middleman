@@ -6,6 +6,7 @@ import {
   activePRTimelineFilterCount,
   DEFAULT_PR_TIMELINE_FILTER,
   filterPREvents,
+  isBotAuthor,
   loadPRTimelineFilter,
   savePRTimelineFilter,
   timelineEventBucket,
@@ -161,6 +162,12 @@ describe("prTimelineFilter", () => {
         hideBots: false,
       }).map((item) => item.ID),
     ).toEqual([1, 2]);
+  });
+
+  it("recognizes Agency and GitHub Copilot as bots", () => {
+    expect(isBotAuthor("Agency")).toBe(true);
+    expect(isBotAuthor("GitHub Copilot")).toBe(true);
+    expect(isBotAuthor("Ada Lovelace")).toBe(false);
   });
 
   it("filters by disabled buckets and bots", () => {

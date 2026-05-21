@@ -16,6 +16,7 @@
   import Chip from "./shared/Chip.svelte";
   import ItemKindChip from "./shared/ItemKindChip.svelte";
   import ItemStateChip from "./shared/ItemStateChip.svelte";
+  import { isBotAuthor } from "../utils/bot-authors.js";
 
   const { activity, settings, sync, grouping } = getStores();
   const navigate = getNavigate();
@@ -70,13 +71,6 @@
     force_push: "var(--accent-red)",
     iteration: "var(--accent-amber)",
   };
-
-  const BOT_SUFFIXES = ["[bot]", "-bot", "bot"];
-
-  function isBot(author: string): boolean {
-    const lower = author.toLowerCase();
-    return BOT_SUFFIXES.some((s) => lower.endsWith(s));
-  }
 
   const hiddenFilterCount = $derived(
     (EVENT_TYPES.length - activity.getEnabledEvents().size)
@@ -187,7 +181,7 @@
         it.item_state !== "merged" && it.item_state !== "closed");
     }
     if (activity.getHideBots()) {
-      result = result.filter((it) => !isBot(it.author));
+      result = result.filter((it) => !isBotAuthor(it.author));
     }
     return result;
   });

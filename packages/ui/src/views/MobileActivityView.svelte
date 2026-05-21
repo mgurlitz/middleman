@@ -10,6 +10,7 @@
   import {
     buildMobileActivityRepoOptions,
   } from "./mobileActivityRepoOptions.js";
+  import { isBotAuthor } from "../utils/bot-authors.js";
 
   const { activity, settings, sync } = getStores();
 
@@ -29,7 +30,6 @@
     latestTime: string;
   };
 
-  const BOT_SUFFIXES = ["[bot]", "-bot", "bot"];
   const timeRanges: TimeRange[] = ["24h", "7d", "30d", "90d"];
   const itemFilters: { value: ItemFilter; label: string }[] = [
     { value: "all", label: "All" },
@@ -65,11 +65,6 @@
     if (debounceTimer) clearTimeout(debounceTimer);
   });
 
-  function isBot(author: string): boolean {
-    const lower = author.toLowerCase();
-    return BOT_SUFFIXES.some((suffix) => lower.endsWith(suffix));
-  }
-
   const displayItems = $derived.by(() => {
     let result = activity.getActivityItems();
     const filter = activity.getItemFilter();
@@ -87,7 +82,7 @@
     }
 
     if (activity.getHideBots()) {
-      result = result.filter((item) => !isBot(item.author));
+      result = result.filter((item) => !isBotAuthor(item.author));
     }
 
     return result;
