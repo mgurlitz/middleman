@@ -280,9 +280,9 @@
               <p class="event-summary">{event.Summary}</p>
             {/if}
             {#if event.Body}
+              {@const providerUrl = commentLink(event)}
               <div class="event-body-wrap">
                 <div class="event-actions">
-                  {@const providerUrl = commentLink(event)}
                   {#if canEditComment(event)}
                     <button
                       class="event-action-btn"
