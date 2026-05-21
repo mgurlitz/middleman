@@ -65,16 +65,16 @@ type Manager struct {
 // tokens maps each host (e.g., "github.com") to its auth token.
 // A nil or empty map means all operations proceed without auth.
 func New(baseDir string, tokens map[string]string) *Manager {
-	hostAuth := make(map[string]hostAuth, len(tokens))
+	authByHost := make(map[string]hostAuth, len(tokens))
 	for host, token := range tokens {
 		if strings.TrimSpace(token) == "" {
 			continue
 		}
-		hostAuth[host] = hostAuth{mode: hostAuthModeBasicToken, token: token}
+		authByHost[host] = hostAuth{mode: hostAuthModeBasicToken, token: token}
 	}
 	return &Manager{
 		baseDir:  baseDir,
-		hostAuth: hostAuth,
+		hostAuth: authByHost,
 	}
 }
 
