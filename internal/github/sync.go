@@ -2990,6 +2990,20 @@ func (s *Syncer) syncMergeRequestsFromList(
 				"err", err,
 			)
 			hadItemFailure = true
+		} else if err := s.updateProviderMRDiffSHAs(
+			ctx,
+			repo,
+			repoID,
+			mr.Number,
+			mr.HeadSHA,
+			mr.BaseSHA,
+			cloneFetchOK,
+		); err != nil {
+			slog.Warn("update provider MR diff SHAs failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", mr.Number,
+				"err", err,
+			)
 		}
 		progress.record(i + 1)
 	}
@@ -4020,7 +4034,7 @@ func (s *Syncer) fetchMRDetail(
 	if _, ok := mrReader.(interface {
 		GetGitHubPullRequest(context.Context, platform.RepoRef, int) (*gh.PullRequest, platform.MergeRequest, error)
 	}); !ok {
-		return s.fetchProviderMRDetail(ctx, mrReader, repo, repoID, number)
+		return s.fetchProviderMRDetail(ctx, mrReader, repo, repoID, number, cloneFetchOK)
 	}
 
 	client, err := s.clientFor(repo)
@@ -4280,6 +4294,7 @@ func (s *Syncer) fetchProviderMRDetail(
 	repo RepoRef,
 	repoID int64,
 	number int,
+	cloneFetchOK bool,
 ) (int, error) {
 	calls := 0
 	mr, err := reader.GetMergeRequest(ctx, platformRepoRef(repo), number)
@@ -4315,6 +4330,21 @@ func (s *Syncer) fetchProviderMRDetail(
 	if err := s.db.EnsureKanbanState(ctx, mrID); err != nil {
 		return calls, fmt.Errorf(
 			"ensure kanban state for MR #%d: %w", number, err,
+		)
+	}
+	if err := s.updateProviderMRDiffSHAs(
+		ctx,
+		repo,
+		repoID,
+		number,
+		normalized.PlatformHeadSHA,
+		normalized.PlatformBaseSHA,
+		cloneFetchOK,
+	); err != nil {
+		slog.Warn("update provider MR diff SHAs failed",
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", number,
+			"err", err,
 		)
 	}
 
@@ -4578,6 +4608,33 @@ func (s *Syncer) fetchProviderIssueDetail(
 	}
 
 	return calls, nil
+}
+
+func (s *Syncer) updateProviderMRDiffSHAs(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	number int,
+	headSHA string,
+	baseSHA string,
+	cloneFetchOK bool,
+) error {
+	if !cloneFetchOK || s.clones == nil || !repoSupportsLocalClone(repo) {
+		return nil
+	}
+	if strings.TrimSpace(headSHA) == "" || strings.TrimSpace(baseSHA) == "" {
+		return nil
+	}
+	mergeBase, err := s.clones.MergeBase(
+		ctx, repoHost(repo), repo.Owner, repo.Name, baseSHA, headSHA,
+	)
+	if err != nil {
+		return fmt.Errorf("merge-base for MR #%d: %w", number, err)
+	}
+	if err := s.db.UpdateDiffSHAs(ctx, repoID, number, headSHA, baseSHA, mergeBase); err != nil {
+		return fmt.Errorf("update diff SHAs for MR #%d: %w", number, err)
+	}
+	return nil
 }
 
 func (s *Syncer) refreshProviderMRDerivedFieldsFromEvents(
@@ -6299,6 +6356,35 @@ func (s *Syncer) syncMRForRepo(
 			_ = s.updateMRDetailFetchedByRepoID(ctx, repoID, number, pending)
 		}
 	} else {
+		cloneFetchOK := false
+		if s.clones != nil && repoSupportsLocalClone(repo) {
+			if cloneErr := s.clones.EnsureClone(
+				ctx, repoHost(repo), repo.Owner, repo.Name, cloneRemoteURL(repo),
+			); cloneErr != nil {
+				slog.Warn("ensure clone failed during provider SyncMR",
+					"repo", repo.Owner+"/"+repo.Name,
+					"number", number,
+					"err", cloneErr,
+				)
+			} else {
+				cloneFetchOK = true
+			}
+		}
+		if err := s.updateProviderMRDiffSHAs(
+			ctx,
+			repo,
+			repoID,
+			number,
+			normalized.PlatformHeadSHA,
+			normalized.PlatformBaseSHA,
+			cloneFetchOK,
+		); err != nil {
+			slog.Warn("update provider MR diff SHAs failed during SyncMR",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number,
+				"err", err,
+			)
+		}
 		pending := false
 		_, pending, err = s.syncProviderMRDetailExtras(
 			ctx, mrReader, repo, repoID, mrID, number, normalized.PlatformHeadSHA, lastActivityBase,
@@ -6731,6 +6817,21 @@ func (s *Syncer) fetchAndUpdateClosedMergeRequest(
 	}
 	if err := s.replaceMergeRequestLabels(ctx, repoID, mrID, normalized.Labels); err != nil {
 		return fmt.Errorf("persist labels for closed MR #%d: %w", number, err)
+	}
+	if err := s.updateProviderMRDiffSHAs(
+		ctx,
+		repo,
+		repoID,
+		number,
+		normalized.PlatformHeadSHA,
+		normalized.PlatformBaseSHA,
+		cloneFetchOK,
+	); err != nil {
+		slog.Warn("update provider MR diff SHAs for closed MR failed",
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", number,
+			"err", err,
+		)
 	}
 	return nil
 }

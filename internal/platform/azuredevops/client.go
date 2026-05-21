@@ -65,10 +65,14 @@ func WithHTTPClientForTesting(client *http.Client) ClientOption {
 	}
 }
 
-func WithTokenSourceForTesting(tokenSource TokenSource) ClientOption {
+func WithTokenSource(tokenSource TokenSource) ClientOption {
 	return func(opts *clientOptions) {
 		opts.tokenSource = tokenSource
 	}
+}
+
+func WithTokenSourceForTesting(tokenSource TokenSource) ClientOption {
+	return WithTokenSource(tokenSource)
 }
 
 func WithRateTracker(rateTracker *ratelimit.RateTracker) ClientOption {
@@ -81,7 +85,7 @@ func NewClient(host string, options ...ClientOption) (*Client, error) {
 	opts := clientOptions{
 		baseURL:     "https://" + strings.TrimRight(host, "/"),
 		httpClient:  &http.Client{Timeout: 30 * time.Second},
-		tokenSource: azureCLITokenSource{},
+		tokenSource: NewCLITokenSource(),
 	}
 	for _, option := range options {
 		option(&opts)
@@ -224,6 +228,10 @@ func (c *Client) ListMergeRequestEvents(
 		repoRef.Host = c.host
 	}
 	return NormalizeMergeRequestEvents(repoRef, number, response.Value), nil
+}
+
+func NewCLITokenSource() TokenSource {
+	return azureCLITokenSource{}
 }
 
 type authTransport struct {

@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/wesm/middleman/internal/config"
 	"github.com/wesm/middleman/internal/db"
+	"github.com/wesm/middleman/internal/gitclone"
 	ghclient "github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/platform"
 	"github.com/wesm/middleman/internal/server"
@@ -153,13 +154,16 @@ func TestValidateProviderHostKeysAllowsMixedProvidersOnSameHostWithSameToken(t *
 	require.NoError(t, err)
 }
 
-func TestValidateProviderHostKeysAllowsAzureDevOpsWithoutCloneToken(t *testing.T) {
-	err := validateProviderHostKeys(map[string]string{
+func TestConfigureCloneAuthRejectsAzureDevOpsSharingHostWithTokenCloneAuth(t *testing.T) {
+	mgr := gitclone.New(t.TempDir(), map[string]string{"code.example.com": "gitlab-token"})
+
+	err := configureCloneAuth(mgr, map[string]string{
 		providerHostKey("azure_devops", "code.example.com"): "",
 		providerHostKey("gitlab", "code.example.com"):       "gitlab-token",
 	})
 
-	require.NoError(t, err)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "code.example.com")
 }
 
 func TestCollectProviderTokensAllowsAzureDevOpsWithoutConfiguredToken(t *testing.T) {

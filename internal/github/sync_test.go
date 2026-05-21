@@ -50,6 +50,54 @@ func setupBareRemoteForSyncTest(t *testing.T) string {
 	return remote
 }
 
+func setupProviderDiffRemoteForSyncTest(t *testing.T) (string, string, string) {
+	t.Helper()
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote.git")
+	work := filepath.Join(dir, "work")
+	runSyncTestGit(t, dir, "init", "--bare", "--initial-branch=main", remote)
+	runSyncTestGit(t, dir, "clone", remote, work)
+	runSyncTestGit(t, work, "config", "user.email", "test@test.com")
+	runSyncTestGit(t, work, "config", "user.name", "Test")
+	require.NoError(t, os.WriteFile(filepath.Join(work, "README.md"), []byte("base\n"), 0o644))
+	runSyncTestGit(t, work, "add", ".")
+	runSyncTestGit(t, work, "commit", "-m", "base")
+	runSyncTestGit(t, work, "push", "origin", "main")
+	baseSHA := syncTestGitSHA(t, work, "HEAD")
+	runSyncTestGit(t, work, "checkout", "-b", "feature/ado")
+	require.NoError(t, os.WriteFile(filepath.Join(work, "README.md"), []byte("base\nchange\n"), 0o644))
+	runSyncTestGit(t, work, "add", ".")
+	runSyncTestGit(t, work, "commit", "-m", "feature")
+	runSyncTestGit(t, work, "push", "origin", "feature/ado")
+	headSHA := syncTestGitSHA(t, work, "HEAD")
+	return remote, baseSHA, headSHA
+}
+
+func runSyncTestGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := procutil.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(gitenv.StripAll(os.Environ()),
+		"GIT_CONFIG_GLOBAL="+os.DevNull,
+		"GIT_CONFIG_SYSTEM="+os.DevNull,
+	)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "git %v failed: %s", args, out)
+}
+
+func syncTestGitSHA(t *testing.T, dir string, ref string) string {
+	t.Helper()
+	cmd := procutil.Command("git", "rev-parse", ref)
+	cmd.Dir = dir
+	cmd.Env = append(gitenv.StripAll(os.Environ()),
+		"GIT_CONFIG_GLOBAL="+os.DevNull,
+		"GIT_CONFIG_SYSTEM="+os.DevNull,
+	)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "git rev-parse %s failed: %s", ref, out)
+	return strings.TrimSpace(string(out))
+}
+
 // testBudget builds a per-host budget map for use in NewSyncer calls.
 func testBudget(limit int) map[string]*SyncBudget {
 	return map[string]*SyncBudget{
@@ -2891,6 +2939,61 @@ func TestDetailDrainUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 	clonePath, err := clones.ClonePath("gitlab.example.com", "group/subgroup", "project")
 	require.NoError(err)
 	require.FileExists(filepath.Join(clonePath, "HEAD"))
+}
+
+func TestSyncMROnProviderComputesDiffSHAsForAzureDevOpsLocalClone(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2026, 5, 23, 12, 0, 0, 0, time.UTC)
+	remote, baseSHA, headSHA := setupProviderDiffRemoteForSyncTest(t)
+	clones := gitclone.New(t.TempDir(), nil)
+	repo := RepoRef{
+		Platform:     platform.KindAzureDevOps,
+		PlatformHost: "dev.azure.com",
+		Owner:        "AcmeOrg/Payments",
+		Name:         "Service",
+		RepoPath:     "AcmeOrg/Payments/Service",
+		CloneURL:     remote,
+	}
+	provider := &syncTestReadProvider{
+		syncTestProvider: syncTestProvider{
+			kind: platform.KindAzureDevOps,
+			host: "dev.azure.com",
+		},
+		mergeRequests: []platform.MergeRequest{{
+			Repo:             platformRepoRef(repo),
+			PlatformID:       17,
+			Number:           17,
+			URL:              "https://dev.azure.com/AcmeOrg/Payments/_git/Service/pullrequest/17",
+			Title:            "Azure local clone MR",
+			Author:           "ada@example.com",
+			State:            "open",
+			HeadBranch:       "feature/ado",
+			BaseBranch:       "main",
+			HeadSHA:          headSHA,
+			BaseSHA:          baseSHA,
+			HeadRepoCloneURL: remote,
+			CreatedAt:        now,
+			UpdatedAt:        now,
+			LastActivityAt:   now,
+		}},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(registry, d, clones, []RepoRef{repo}, time.Minute, nil, nil)
+
+	require.NoError(syncer.SyncMROnProvider(ctx, platform.KindAzureDevOps, repo.PlatformHost, repo.Owner, repo.Name, 17))
+	repoRow, err := d.GetRepoByHostOwnerName(ctx, repo.PlatformHost, repo.Owner, repo.Name)
+	require.NoError(err)
+	require.NotNil(repoRow)
+	shas, err := d.GetDiffSHAsByRepoID(ctx, repoRow.ID, 17)
+	require.NoError(err)
+	require.NotNil(shas)
+	assert.Equal(headSHA, shas.DiffHeadSHA)
+	assert.Equal(baseSHA, shas.DiffBaseSHA)
+	assert.Equal(baseSHA, shas.MergeBaseSHA)
 }
 
 func TestSyncMRUsesConfiguredProviderRegistry(t *testing.T) {

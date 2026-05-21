@@ -31,10 +31,27 @@ const ensureCloneTimeout = 15 * time.Minute
 // ErrNotFound is returned when a git ref or object cannot be resolved.
 var ErrNotFound = errors.New("git object not found")
 
+type TokenSource interface {
+	Token(ctx context.Context) (string, error)
+}
+
+type hostAuthMode int
+
+const (
+	hostAuthModeBasicToken hostAuthMode = iota + 1
+	hostAuthModeBearerTokenSource
+)
+
+type hostAuth struct {
+	mode        hostAuthMode
+	token       string
+	tokenSource TokenSource
+}
+
 // Manager manages bare git clones for diff computation.
 type Manager struct {
-	baseDir string            // directory to store clones
-	tokens  map[string]string // host -> token (e.g., "github.com" -> "ghp_...")
+	baseDir  string              // directory to store clones
+	hostAuth map[string]hostAuth // host -> auth config
 
 	// ensureSF deduplicates concurrent EnsureClone calls for the same
 	// (host, owner, name). Without it, callers like the periodic syncer,
@@ -48,7 +65,35 @@ type Manager struct {
 // tokens maps each host (e.g., "github.com") to its auth token.
 // A nil or empty map means all operations proceed without auth.
 func New(baseDir string, tokens map[string]string) *Manager {
-	return &Manager{baseDir: baseDir, tokens: tokens}
+	hostAuth := make(map[string]hostAuth, len(tokens))
+	for host, token := range tokens {
+		if strings.TrimSpace(token) == "" {
+			continue
+		}
+		hostAuth[host] = hostAuth{mode: hostAuthModeBasicToken, token: token}
+	}
+	return &Manager{
+		baseDir:  baseDir,
+		hostAuth: hostAuth,
+	}
+}
+
+func (m *Manager) SetAzureBearerTokenSource(host string, tokenSource TokenSource) {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return
+	}
+	if m.hostAuth == nil {
+		m.hostAuth = make(map[string]hostAuth)
+	}
+	if tokenSource == nil {
+		delete(m.hostAuth, host)
+		return
+	}
+	m.hostAuth[host] = hostAuth{
+		mode:        hostAuthModeBearerTokenSource,
+		tokenSource: tokenSource,
+	}
 }
 
 // ClonePath returns the filesystem path for a repo's bare clone.
@@ -377,6 +422,13 @@ func validateRemoteURLIdentity(expectedHost, owner, name, remoteURL string) erro
 	return nil
 }
 
+func normalizeRemoteRepoPath(repoPath string) string {
+	repoPath = strings.Trim(strings.TrimSpace(repoPath), "/")
+	repoPath = strings.TrimSuffix(repoPath, ".git")
+	repoPath = strings.ReplaceAll(repoPath, "/_git/", "/")
+	return strings.Trim(repoPath, "/")
+}
+
 func remoteURLHost(remoteURL string) string {
 	remoteURL = strings.TrimSpace(remoteURL)
 	if remoteURL == "" {
@@ -418,8 +470,7 @@ func remoteURLRepoPath(remoteURL string) string {
 		}
 		repoPath = path
 	}
-	repoPath = strings.Trim(strings.TrimSpace(repoPath), "/")
-	repoPath = strings.TrimSuffix(repoPath, ".git")
+	repoPath = normalizeRemoteRepoPath(repoPath)
 	if repoPath == "" || strings.Contains(repoPath, "\\") {
 		return ""
 	}
@@ -461,6 +512,30 @@ func (m *Manager) git(
 	return m.gitWithInput(ctx, host, dir, nil, args...)
 }
 
+func (m *Manager) authHeader(ctx context.Context, host string) (string, error) {
+	auth, ok := m.hostAuth[host]
+	if !ok {
+		return "", nil
+	}
+	switch auth.mode {
+	case hostAuthModeBearerTokenSource:
+		token, err := auth.tokenSource.Token(ctx)
+		if err != nil {
+			return "", fmt.Errorf("resolve git auth token for %s: %w", host, err)
+		}
+		if token == "" {
+			return "", nil
+		}
+		return "Authorization: Bearer " + token, nil
+	case hostAuthModeBasicToken:
+		cred := base64.StdEncoding.EncodeToString(
+			[]byte("x-access-token:" + auth.token))
+		return "Authorization: Basic " + cred, nil
+	default:
+		return "", nil
+	}
+}
+
 func (m *Manager) gitWithInput(
 	ctx context.Context, host, dir string, input []byte, args ...string,
 ) ([]byte, error) {
@@ -486,12 +561,12 @@ func (m *Manager) gitWithInput(
 	}
 	addGitConfig("gc.auto", "0")
 	addGitConfig("maintenance.auto", "false")
-	if token := m.tokens[host]; token != "" {
-		// GitHub's smart HTTP endpoint requires Basic auth, not Bearer.
-		// Use "x-access-token" as the username with the token as password.
-		cred := base64.StdEncoding.EncodeToString(
-			[]byte("x-access-token:" + token))
-		addGitConfig("http.extraHeader", "Authorization: Basic "+cred)
+	header, err := m.authHeader(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	if header != "" {
+		addGitConfig("http.extraHeader", header)
 	}
 	cmd.Env = append(cmd.Env, fmt.Sprintf("GIT_CONFIG_COUNT=%d", configCount))
 	var stderr bytes.Buffer
