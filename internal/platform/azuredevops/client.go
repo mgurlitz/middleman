@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wesm/middleman/internal/platform"
@@ -22,6 +23,7 @@ const (
 	defaultAPIVersion        = "7.1"
 	azureDevOpsResource      = "499b84ac-1321-427f-aa17-267ca6975798"
 	azureCLITokenTimeout     = 10 * time.Second
+	azureCLITokenCacheTTL    = 5 * time.Minute
 )
 
 type TokenSource interface {
@@ -232,7 +234,10 @@ func (c *Client) ListMergeRequestEvents(
 }
 
 func NewCLITokenSource() TokenSource {
-	return azureCLITokenSource{}
+	return &cachedTokenSource{
+		base: azureCLITokenSource{},
+		ttl:  azureCLITokenCacheTTL,
+	}
 }
 
 type authTransport struct {
@@ -415,6 +420,39 @@ func applyRepositoryListOptions(
 		return repos
 	}
 	return repos[:opts.Limit]
+}
+
+type cachedTokenSource struct {
+	base TokenSource
+	ttl  time.Duration
+
+	mu        sync.Mutex
+	token     string
+	expiresAt time.Time
+}
+
+func (c *cachedTokenSource) Token(ctx context.Context) (string, error) {
+	if c == nil || c.base == nil {
+		return "", fmt.Errorf("missing Azure DevOps token source")
+	}
+	now := time.Now()
+	c.mu.Lock()
+	if c.token != "" && now.Before(c.expiresAt) {
+		token := c.token
+		c.mu.Unlock()
+		return token, nil
+	}
+	c.mu.Unlock()
+
+	token, err := c.base.Token(ctx)
+	if err != nil {
+		return "", err
+	}
+	c.mu.Lock()
+	c.token = token
+	c.expiresAt = time.Now().Add(c.ttl)
+	c.mu.Unlock()
+	return token, nil
 }
 
 type azureCLITokenSource struct{}

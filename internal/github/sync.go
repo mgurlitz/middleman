@@ -2237,28 +2237,17 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		return fmt.Errorf("mark sync started for %s/%s: %w", repo.Owner, repo.Name, err)
 	}
 
-	// Fetch bare clone before PR data so refs are available for merge-base.
-	host := repoHost(repo)
 	cloneFetchOK := false
-	if s.clones != nil && repoSupportsLocalClone(repo) {
-		if err := s.clones.EnsureClone(ctx, host, repo.Owner, repo.Name, cloneRemoteURL(repo)); err != nil {
-			slog.Warn("bare clone fetch failed",
-				"repo", repo.Owner+"/"+repo.Name, "err", err,
-			)
-		} else {
-			cloneFetchOK = true
-		}
-	}
+
+	s.syncRepoLabelCatalog(ctx, repo, repoID)
+
+	cloneFetchOK, syncErr := s.indexSyncRepo(ctx, repo, repoID)
 
 	if client, ok := s.optionalGitHubClientFor(repo); ok {
 		s.syncRepoOverview(ctx, client, repo, repoID, cloneFetchOK)
 	} else {
 		s.syncProviderRepoOverview(ctx, repo, repoID, cloneFetchOK)
 	}
-
-	s.syncRepoLabelCatalog(ctx, repo, repoID)
-
-	syncErr := s.indexSyncRepo(ctx, repo, repoID, cloneFetchOK)
 
 	syncErrStr := ""
 	if syncErr != nil {
@@ -2750,11 +2739,11 @@ func (s *Syncer) indexSyncRepo(
 	ctx context.Context,
 	repo RepoRef,
 	repoID int64,
-	cloneFetchOK bool,
-) error {
+) (bool, error) {
+	cloneFetchOK := false
 	caps, err := s.ProviderCapabilities(repoPlatform(repo), repoHost(repo))
 	if err != nil {
-		return fmt.Errorf("resolve provider capabilities for %s/%s: %w", repo.Owner, repo.Name, err)
+		return cloneFetchOK, fmt.Errorf("resolve provider capabilities for %s/%s: %w", repo.Owner, repo.Name, err)
 	}
 	gitHubClient, hasGitHubClient := s.optionalGitHubClientFor(repo)
 	platformRef := platformRepoRef(repo)
@@ -2789,7 +2778,16 @@ func (s *Syncer) indexSyncRepo(
 	if caps.ReadMergeRequests {
 		mrReader, err := s.mergeRequestReaderFor(repo)
 		if err != nil {
-			return fmt.Errorf("resolve merge request reader for %s/%s: %w", repo.Owner, repo.Name, err)
+			return cloneFetchOK, fmt.Errorf("resolve merge request reader for %s/%s: %w", repo.Owner, repo.Name, err)
+		}
+		localOpenMRCount := 0
+		if count, countErr := s.db.CountOpenMergeRequestsForRepo(ctx, repoID); countErr != nil {
+			slog.Warn("count open merge requests before lazy clone failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"err", countErr,
+			)
+		} else {
+			localOpenMRCount = count
 		}
 		openMRs, err := mrReader.ListOpenMergeRequests(ctx, platformRef)
 		if err != nil {
@@ -2802,10 +2800,21 @@ func (s *Syncer) indexSyncRepo(
 				prListUnchanged = true
 			} else {
 				s.markRepoFailed(repo, failMR)
-				return fmt.Errorf("list open PRs: %w", err)
+				return cloneFetchOK, fmt.Errorf("list open PRs: %w", err)
 			}
 		}
 
+		needClone := len(openMRs) > 0 || localOpenMRCount > 0
+		if needClone && !cloneFetchOK && s.clones != nil && repoSupportsLocalClone(repo) {
+			if err := s.clones.EnsureClone(ctx, repoHost(repo), repo.Owner, repo.Name, cloneRemoteURL(repo)); err != nil {
+				slog.Warn("bare clone fetch failed",
+					"repo", repo.Owner+"/"+repo.Name,
+					"err", err,
+				)
+			} else {
+				cloneFetchOK = true
+			}
+		}
 		if prListUnchanged {
 			// 304 — nothing to do. The detail drain handles CI
 			// updates for PRs with pending checks via priority scoring.
@@ -2868,7 +2877,7 @@ func (s *Syncer) indexSyncRepo(
 			if failedScope != 0 {
 				s.markRepoFailed(repo, failedScope)
 			}
-			return fmt.Errorf("resolve issue reader for %s/%s: %w", repo.Owner, repo.Name, err)
+			return cloneFetchOK, fmt.Errorf("resolve issue reader for %s/%s: %w", repo.Owner, repo.Name, err)
 		}
 
 		var openIssues []platform.Issue
@@ -2964,7 +2973,7 @@ func (s *Syncer) indexSyncRepo(
 		s.refreshRepoIssueComments(ctx, repo)
 	}
 
-	return nil
+	return cloneFetchOK, nil
 }
 
 func (s *Syncer) syncMergeRequestsFromList(

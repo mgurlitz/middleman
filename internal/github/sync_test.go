@@ -2846,6 +2846,7 @@ func TestSyncRepoUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
+	now := time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)
 	remote := setupBareRemoteForSyncTest(t)
 	clones := gitclone.New(t.TempDir(), nil)
 	repo := RepoRef{
@@ -2862,6 +2863,19 @@ func TestSyncRepoUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 			kind: platform.KindGitLab,
 			host: "gitlab.example.com",
 		},
+		mergeRequests: []platform.MergeRequest{{
+			Repo:           platformRepoRef(repo),
+			PlatformID:     1001,
+			Number:         7,
+			Title:          "fresh MR",
+			Author:         "ada",
+			State:          "open",
+			HeadBranch:     "feature",
+			BaseBranch:     "main",
+			CreatedAt:      now,
+			UpdatedAt:      now,
+			LastActivityAt: now,
+		}},
 	}
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
@@ -2871,6 +2885,37 @@ func TestSyncRepoUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 	clonePath, err := clones.ClonePath("gitlab.example.com", "group/subgroup", "project")
 	require.NoError(err)
 	require.FileExists(filepath.Join(clonePath, "HEAD"))
+}
+
+func TestSyncRepoSkipsCloneWhenProviderHasNoOpenMergeRequests(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	clones := gitclone.New(t.TempDir(), nil)
+	repo := RepoRef{
+		Platform:     platform.KindGitLab,
+		PlatformHost: "gitlab.example.com",
+		Owner:        "group/subgroup",
+		Name:         "project",
+		RepoPath:     "group/subgroup/project",
+		CloneURL:     "https://gitlab.example.com/group/subgroup/project.git",
+	}
+	provider := &syncTestReadProvider{
+		syncTestProvider: syncTestProvider{
+			kind: platform.KindGitLab,
+			host: "gitlab.example.com",
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(registry, d, clones, []RepoRef{repo}, time.Minute, nil, nil)
+
+	require.NoError(syncer.syncRepo(ctx, repo))
+	clonePath, err := clones.ClonePath("gitlab.example.com", "group/subgroup", "project")
+	require.NoError(err)
+	_, err = os.Stat(filepath.Join(clonePath, "HEAD"))
+	require.Error(err)
+	require.True(os.IsNotExist(err))
 }
 
 func TestDetailDrainUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {

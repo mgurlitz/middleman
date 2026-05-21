@@ -119,6 +119,15 @@ func TestAuthHeaderUsesBasicTokenForDefaultHosts(t *testing.T) {
 	assert.Equal(expected, header)
 }
 
+func TestGitCommandNeedsAuthOnlyForNetworkedCommands(t *testing.T) {
+	assert.True(t, gitCommandNeedsAuth([]string{"clone", "--bare", "https://example/repo.git"}))
+	assert.True(t, gitCommandNeedsAuth([]string{"fetch", "--prune", "origin"}))
+	assert.True(t, gitCommandNeedsAuth([]string{"remote", "set-head", "origin", "-a"}))
+	assert.False(t, gitCommandNeedsAuth([]string{"diff", "--raw"}))
+	assert.False(t, gitCommandNeedsAuth([]string{"rev-parse", "HEAD"}))
+	assert.False(t, gitCommandNeedsAuth([]string{"merge-base", "a", "b"}))
+}
+
 func TestClonePathIncludesHost(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

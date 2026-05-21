@@ -512,6 +512,20 @@ func (m *Manager) git(
 	return m.gitWithInput(ctx, host, dir, nil, args...)
 }
 
+func gitCommandNeedsAuth(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	switch args[0] {
+	case "clone", "fetch":
+		return true
+	case "remote":
+		return len(args) >= 4 && args[1] == "set-head" && args[3] == "-a"
+	default:
+		return false
+	}
+}
+
 func (m *Manager) authHeader(ctx context.Context, host string) (string, error) {
 	auth, ok := m.hostAuth[host]
 	if !ok {
@@ -563,12 +577,14 @@ func (m *Manager) gitWithInput(
 	}
 	addGitConfig("gc.auto", "0")
 	addGitConfig("maintenance.auto", "false")
-	header, err := m.authHeader(ctx, host)
-	if err != nil {
-		return nil, err
-	}
-	if header != "" {
-		addGitConfig("http.extraHeader", header)
+	if gitCommandNeedsAuth(args) {
+		header, err := m.authHeader(ctx, host)
+		if err != nil {
+			return nil, err
+		}
+		if header != "" {
+			addGitConfig("http.extraHeader", header)
+		}
 	}
 	cmd.Env = append(cmd.Env, fmt.Sprintf("GIT_CONFIG_COUNT=%d", configCount))
 	var stderr bytes.Buffer

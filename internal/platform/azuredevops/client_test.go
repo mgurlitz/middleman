@@ -100,7 +100,7 @@ func TestAzureCLITokenSourceDoesNotLeakStdoutTokenOnFailure(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		script = "@echo off\r\n" +
 			"echo secret-token\r\n" +
-			"echo login expired 1>&2\r\n" +
+			">&2 echo login expired\r\n" +
 			"exit /b 1\r\n"
 	}
 	require.NoError(os.WriteFile(azPath, []byte(script), 0o755))
@@ -110,6 +110,42 @@ func TestAzureCLITokenSourceDoesNotLeakStdoutTokenOnFailure(t *testing.T) {
 	require.Error(err)
 	assert.Contains(err.Error(), "login expired")
 	assert.NotContains(err.Error(), "secret-token")
+}
+
+func TestNewCLITokenSourceCachesAccessTokenInMemory(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	dir := t.TempDir()
+	argvPath := filepath.Join(dir, "argv")
+	azPath := filepath.Join(dir, "az")
+	if runtime.GOOS == "windows" {
+		azPath += ".cmd"
+	}
+	script := "#!/bin/sh\n" +
+		"printf '%s\\n' \"$*\" >> \"$FAKE_AZ_ARGV\"\n" +
+		"printf '%s\\n' 'cached-token'\n"
+	if runtime.GOOS == "windows" {
+		script = "@echo off\r\n" +
+			"echo %*>>\"%FAKE_AZ_ARGV%\"\r\n" +
+			"echo cached-token\r\n"
+	}
+	require.NoError(os.WriteFile(azPath, []byte(script), 0o755))
+	t.Setenv("PATH", dir)
+	t.Setenv("FAKE_AZ_ARGV", argvPath)
+
+	source := NewCLITokenSource()
+	first, err := source.Token(context.Background())
+	require.NoError(err)
+	second, err := source.Token(context.Background())
+	require.NoError(err)
+	assert.Equal("cached-token", first)
+	assert.Equal("cached-token", second)
+
+	data, err := os.ReadFile(argvPath)
+	require.NoError(err)
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	assert.Len(lines, 1)
 }
 
 func TestClientCapabilitiesExposeReadOnlyAzureDevOpsPOC(t *testing.T) {
