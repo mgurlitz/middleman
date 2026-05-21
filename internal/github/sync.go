@@ -1239,6 +1239,10 @@ func repoSupportsLocalClone(repo RepoRef) bool {
 	return platform.SupportsLocalClone(repoPlatform(repo))
 }
 
+func repoSupportsConditionalCommentRefresh(repo RepoRef) bool {
+	return repoPlatform(repo) == platform.KindGitHub
+}
+
 func watchedMRRateBucketKey(mr WatchedMR) string {
 	return rateBucketKeyFor(watchedMRPlatform(mr), watchedMRHost(mr))
 }
@@ -2951,10 +2955,12 @@ func (s *Syncer) indexSyncRepo(
 		s.clearRepoFailed(repo)
 	}
 
-	if caps.ReadMergeRequests && prListUnchanged && failedScope&failMR == 0 {
+	if repoSupportsConditionalCommentRefresh(repo) &&
+		caps.ReadMergeRequests && prListUnchanged && failedScope&failMR == 0 {
 		s.refreshRepoPRComments(ctx, repo)
 	}
-	if caps.ReadIssues && issueListUnchanged && failedScope&failIssues == 0 {
+	if repoSupportsConditionalCommentRefresh(repo) &&
+		caps.ReadIssues && issueListUnchanged && failedScope&failIssues == 0 {
 		s.refreshRepoIssueComments(ctx, repo)
 	}
 
@@ -3135,7 +3141,8 @@ func (s *Syncer) indexUpsertMergeRequest(
 		)
 	}
 
-	if existing != nil &&
+	if repoSupportsConditionalCommentRefresh(repo) &&
+		existing != nil &&
 		existing.DetailFetchedAt != nil &&
 		existing.UpdatedAt.Equal(normalized.UpdatedAt) {
 		s.queuePRCommentSync(repo, existing.Number)
@@ -3219,7 +3226,8 @@ func (s *Syncer) indexUpsertMR(
 		)
 	}
 
-	if existing != nil &&
+	if repoSupportsConditionalCommentRefresh(repo) &&
+		existing != nil &&
 		existing.DetailFetchedAt != nil &&
 		existing.UpdatedAt.Equal(normalized.UpdatedAt) {
 		s.queuePRCommentSync(repo, existing.Number)
@@ -3361,6 +3369,9 @@ func (s *Syncer) drainPendingCommentSyncs(
 		if ctx.Err() != nil {
 			return
 		}
+		if !repoSupportsConditionalCommentRefresh(item.repo) {
+			continue
+		}
 		bucket := repoRateBucketKey(item.repo)
 		if !eligibleHosts[bucket] {
 			continue
@@ -3402,6 +3413,9 @@ func (s *Syncer) drainPendingCommentSyncs(
 	for _, item := range issues {
 		if ctx.Err() != nil {
 			return
+		}
+		if !repoSupportsConditionalCommentRefresh(item.repo) {
+			continue
 		}
 		bucket := repoRateBucketKey(item.repo)
 		if !eligibleHosts[bucket] {
@@ -5276,7 +5290,7 @@ func (s *Syncer) syncOpenPlatformIssue(
 	}
 
 	if !needsTimeline {
-		if existing != nil && existing.DetailFetchedAt != nil {
+		if repoSupportsConditionalCommentRefresh(repo) && existing != nil && existing.DetailFetchedAt != nil {
 			s.queueIssueCommentSync(repo, existing.Number)
 		}
 		return nil
@@ -5388,6 +5402,9 @@ func (s *Syncer) refreshRepoPRComments(
 	ctx context.Context,
 	repo RepoRef,
 ) {
+	if !repoSupportsConditionalCommentRefresh(repo) {
+		return
+	}
 	prs, err := s.db.ListMergeRequests(ctx, db.ListMergeRequestsOpts{
 		PlatformHost: repoHost(repo),
 		RepoOwner:    repo.Owner,
@@ -5423,6 +5440,9 @@ func (s *Syncer) refreshRepoIssueComments(
 	ctx context.Context,
 	repo RepoRef,
 ) {
+	if !repoSupportsConditionalCommentRefresh(repo) {
+		return
+	}
 	issues, err := s.db.ListIssues(ctx, db.ListIssuesOpts{
 		PlatformHost: repoHost(repo),
 		RepoOwner:    repo.Owner,

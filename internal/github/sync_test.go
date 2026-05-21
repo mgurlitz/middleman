@@ -8696,6 +8696,96 @@ func TestDrainPendingCommentSyncsReadsQueuedItemsByProviderIdentity(t *testing.T
 	assert.Empty(githubIssueEvents)
 }
 
+func TestIndexUpsertMergeRequestDoesNotQueueConditionalCommentRefreshForNonGitHubProviders(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)
+	detailFetchedAt := now.Add(-time.Minute)
+	repo := RepoRef{
+		Platform:     platform.KindAzureDevOps,
+		PlatformHost: "dev.azure.com",
+		Owner:        "AcmeOrg/Payments",
+		Name:         "Service",
+		RepoPath:     "AcmeOrg/Payments/Service",
+	}
+	repoID, err := d.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(err)
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID:          repoID,
+		PlatformID:      17,
+		Number:          17,
+		Title:           "existing",
+		Author:          "ada@example.com",
+		State:           "open",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+		DetailFetchedAt: &detailFetchedAt,
+	})
+	require.NoError(err)
+
+	syncer := NewSyncerWithRegistry(nil, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
+	err = syncer.indexUpsertMergeRequest(ctx, repo, repoID, platform.MergeRequest{
+		Repo:       platformRepoRef(repo),
+		PlatformID: 17,
+		Number:     17,
+		Title:      "existing",
+		Author:     "ada@example.com",
+		State:      "open",
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	})
+	require.NoError(err)
+	assert.Empty(syncer.pendingPRCommentSyncs)
+}
+
+func TestSyncOpenPlatformIssueDoesNotQueueConditionalCommentRefreshForNonGitHubProviders(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)
+	detailFetchedAt := now.Add(-time.Minute)
+	repo := RepoRef{
+		Platform:     platform.KindAzureDevOps,
+		PlatformHost: "dev.azure.com",
+		Owner:        "AcmeOrg/Payments",
+		Name:         "Service",
+		RepoPath:     "AcmeOrg/Payments/Service",
+	}
+	repoID, err := d.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(err)
+	_, err = d.UpsertIssue(ctx, &db.Issue{
+		RepoID:          repoID,
+		PlatformID:      11,
+		Number:          11,
+		Title:           "existing issue",
+		Author:          "ada@example.com",
+		State:           "open",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LastActivityAt:  now,
+		DetailFetchedAt: &detailFetchedAt,
+	})
+	require.NoError(err)
+
+	syncer := NewSyncerWithRegistry(nil, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
+	err = syncer.syncOpenPlatformIssue(ctx, &syncTestIssueOnlyProvider{}, repo, repoID, platform.Issue{
+		Repo:       platformRepoRef(repo),
+		PlatformID: 11,
+		Number:     11,
+		Title:      "existing issue",
+		Author:     "ada@example.com",
+		State:      "open",
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}, false)
+	require.NoError(err)
+	assert.Empty(syncer.pendingIssueCommentSyncs)
+}
+
 func TestRefreshRepoCommentsFiltersByHost(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)
