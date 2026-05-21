@@ -145,6 +145,32 @@ func TestAPIAzureDevOpsReadOnlySyncPersistsThroughServer(t *testing.T) {
 					}]
 				}]
 			}`))
+		case "/AcmeOrg/Payments/_apis/git/repositories/Service/pullRequests/17/iterations":
+			_, _ = w.Write([]byte(fmt.Sprintf(`{
+				"count": 2,
+				"value": [{
+					"id": 1,
+					"createdDate": "2026-05-21T12:02:00Z",
+					"author": {
+						"displayName": "Ada Lovelace",
+						"uniqueName": "ada@example.com"
+					},
+					"sourceRefCommit": {"commitId": %q},
+					"targetRefCommit": {"commitId": %q},
+					"commonRefCommit": {"commitId": %q}
+				}, {
+					"id": 2,
+					"updatedDate": "2026-05-21T12:06:00Z",
+					"reason": "push",
+					"author": {
+						"displayName": "Ada Lovelace",
+						"uniqueName": "ada@example.com"
+					},
+					"sourceRefCommit": {"commitId": %q},
+					"targetRefCommit": {"commitId": %q},
+					"commonRefCommit": {"commitId": %q}
+				}]
+			}`, baseSHA, baseSHA, baseSHA, headSHA, baseSHA, baseSHA)))
 		default:
 			http.NotFound(w, r)
 		}
@@ -220,10 +246,15 @@ func TestAPIAzureDevOpsReadOnlySyncPersistsThroughServer(t *testing.T) {
 	var detail mergeRequestDetailResponse
 	require.NoError(json.NewDecoder(rawDetail.Body).Decode(&detail))
 	require.NotNil(detail.MergeRequest)
-	require.Len(detail.Events, 1)
-	assert.Equal("Looks good from Azure DevOps", detail.Events[0].Body)
+	require.Len(detail.Events, 3)
+	assert.Equal("iteration", detail.Events[0].EventType)
+	assert.Equal("Iteration 1", detail.Events[0].Summary)
+	assert.Equal("issue_comment", detail.Events[1].EventType)
+	assert.Equal("Looks good from Azure DevOps", detail.Events[1].Body)
+	assert.Equal("iteration", detail.Events[2].EventType)
+	assert.Equal("Iteration 2", detail.Events[2].Summary)
 	assert.Equal(1, detail.MergeRequest.CommentCount)
-	assert.Equal(now.Add(5*time.Minute), detail.MergeRequest.LastActivityAt)
+	assert.Equal(now.Add(6*time.Minute), detail.MergeRequest.LastActivityAt)
 	assert.Equal(headSHA, detail.DiffHeadSHA)
 	assert.Equal(baseSHA, detail.MergeBaseSHA)
 	assert.True(detail.Repo.Capabilities.ReadRepositories)

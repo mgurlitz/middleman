@@ -220,6 +220,29 @@ describe("EventTimeline", () => {
     );
   });
 
+  it("renders Azure DevOps iteration events with their summary", () => {
+    render(EventTimeline, {
+      props: {
+        events: [makeEvent({
+          EventType: "iteration",
+          Summary: "Iteration 3",
+          Body: "Source updated: abc1234 -> def5678\nReason: push",
+          MetadataJSON: JSON.stringify({
+            iteration_id: 3,
+            compare_from_sha: "abc1234",
+            compare_to_sha: "def5678",
+          }),
+        })],
+      },
+    });
+
+    const label = screen.getByText("Iteration");
+    expect(label).toBeTruthy();
+    expect(label.getAttribute("style")).toContain("var(--accent-amber)");
+    expect(screen.getByText("Iteration 3")).toBeTruthy();
+    expect(screen.getByText(/Source updated: abc1234 -> def5678/)).toBeTruthy();
+  });
+
   it("renders system events as compact rows", () => {
     render(EventTimeline, {
       props: {

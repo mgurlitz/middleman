@@ -2,6 +2,7 @@ package azuredevops
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -268,6 +269,67 @@ func TestNormalizePullRequestMapsAzureFieldsAndThreads(t *testing.T) {
 	assert.Equal(t, "azure_devops:dev.azure.com:AcmeOrg/Payments/Service:mr:17:thread:55:comment:1001", events[0].DedupeKey)
 	assert.Equal(t, 1, countCommentEvents(events))
 	assert.Equal(t, time.Date(2026, 5, 21, 12, 0, 0, 0, time.UTC), latestEventTime(events))
+}
+
+func TestNormalizeMergeRequestTimelineEventsAddsIterationEvents(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	ref := platform.RepoRef{
+		Platform: platform.KindAzureDevOps,
+		Host:     "dev.azure.com",
+		Owner:    "AcmeOrg/Payments",
+		Name:     "Service",
+		RepoPath: "AcmeOrg/Payments/Service",
+	}
+	iterations := []pullRequestIterationDTO{
+		{
+			ID:              1,
+			CreatedDate:     "2026-05-21T11:45:00Z",
+			Author:          identityDTO{DisplayName: "Ada Lovelace", UniqueName: "ada@example.com"},
+			SourceRefCommit: &commitRefDTO{CommitID: "1111111222222233333334444444555555566666"},
+			TargetRefCommit: &commitRefDTO{CommitID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+			CommonRefCommit: &commitRefDTO{CommitID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		},
+		{
+			ID:              2,
+			UpdatedDate:     "2026-05-21T12:10:00Z",
+			Reason:          "push",
+			Author:          identityDTO{DisplayName: "Ada Lovelace", UniqueName: "ada@example.com"},
+			SourceRefCommit: &commitRefDTO{CommitID: "7777777888888899999990000000111111122222"},
+			TargetRefCommit: &commitRefDTO{CommitID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+			CommonRefCommit: &commitRefDTO{CommitID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		},
+	}
+
+	events := NormalizeMergeRequestTimelineEvents(ref, 17, []threadDTO{ {
+		ID: 55,
+		Comments: []commentDTO{{
+			ID:            1001,
+			CommentType:   "text",
+			Content:       "Looks good",
+			PublishedDate: "2026-05-21T12:00:00Z",
+			Author:        identityDTO{DisplayName: "Grace Hopper"},
+		}},
+	}}, iterations)
+	require.Len(events, 3)
+	assert.Equal("iteration", events[0].EventType)
+	assert.Equal("Iteration 1", events[0].Summary)
+	assert.Equal("ada@example.com", events[0].Author)
+	assert.Equal("Source updated: aaaaaaa -> 1111111", events[0].Body)
+
+	assert.Equal("issue_comment", events[1].EventType)
+	assert.Equal("iteration", events[2].EventType)
+	assert.Equal("Iteration 2", events[2].Summary)
+	assert.Equal("Source updated: 1111111 -> 7777777\nReason: push", events[2].Body)
+	assert.Equal("azure_devops:dev.azure.com:AcmeOrg/Payments/Service:mr:17:iteration:2", events[2].DedupeKey)
+	assert.Equal(time.Date(2026, 5, 21, 12, 10, 0, 0, time.UTC), latestEventTime(events))
+
+	var metadata map[string]any
+	require.NoError(json.Unmarshal([]byte(events[2].MetadataJSON), &metadata))
+	assert.Equal(float64(2), metadata["iteration_id"])
+	assert.Equal("1111111222222233333334444444555555566666", metadata["compare_from_sha"])
+	assert.Equal("7777777888888899999990000000111111122222", metadata["compare_to_sha"])
 }
 
 func TestParseRepoScopeRejectsInvalidAzureOwnerShape(t *testing.T) {

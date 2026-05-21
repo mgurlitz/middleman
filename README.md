@@ -256,8 +256,8 @@ az account get-access-token \
 ```
 
 The current Azure DevOps POC supports repository lookup, open pull requests,
-and PR comment threads. It does not yet support work items, write mutations,
-or clone-backed diff/workspace flows.
+PR comment threads, and PR iteration history. It does not yet support work
+items, write mutations, or clone-backed diff/workspace flows.
 
 ## Embedding
 

@@ -47,6 +47,7 @@
     review: "Review",
     commit: "Commit",
     force_push: "Force-pushed",
+    iteration: "Iteration",
     review_comment: "Review Comment",
   };
 
@@ -56,6 +57,7 @@
     review_comment: "var(--accent-purple)",
     commit: "var(--accent-green)",
     force_push: "var(--accent-red)",
+    iteration: "var(--accent-amber)",
   };
 
   function shouldRenderMarkdown(eventType: string): boolean {
@@ -276,7 +278,7 @@
               {/if}
               <span class="event-time">{timeAgo(event.CreatedAt)}</span>
             </div>
-            {#if event.Summary && (event.EventType === "commit" || event.EventType === "force_push")}
+            {#if event.Summary && !["issue_comment", "review", "review_comment"].includes(event.EventType)}
               <p class="event-summary">{event.Summary}</p>
             {/if}
             {#if event.Body}

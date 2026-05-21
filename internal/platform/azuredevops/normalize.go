@@ -1,7 +1,9 @@
 package azuredevops
 
 import (
+	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -47,23 +49,23 @@ type pullRequestLinksDTO struct {
 }
 
 type pullRequestDTO struct {
-	PullRequestID        int                 `json:"pullRequestId"`
-	CodeReviewID         int                 `json:"codeReviewId"`
-	Status               string              `json:"status"`
-	Title                string              `json:"title"`
-	Description          string              `json:"description"`
-	CreationDate         string              `json:"creationDate"`
-	ClosedDate           string              `json:"closedDate"`
-	IsDraft              bool                `json:"isDraft"`
-	CreatedBy            identityDTO         `json:"createdBy"`
-	SourceRefName        string              `json:"sourceRefName"`
-	TargetRefName        string              `json:"targetRefName"`
-	MergeStatus          string              `json:"mergeStatus"`
-	LastMergeSourceCommit *commitRefDTO      `json:"lastMergeSourceCommit"`
-	LastMergeTargetCommit *commitRefDTO      `json:"lastMergeTargetCommit"`
-	LastMergeCommit      *commitRefDTO       `json:"lastMergeCommit"`
-	Repository           repositoryDTO       `json:"repository"`
-	Links                pullRequestLinksDTO `json:"_links"`
+	PullRequestID         int                 `json:"pullRequestId"`
+	CodeReviewID          int                 `json:"codeReviewId"`
+	Status                string              `json:"status"`
+	Title                 string              `json:"title"`
+	Description           string              `json:"description"`
+	CreationDate          string              `json:"creationDate"`
+	ClosedDate            string              `json:"closedDate"`
+	IsDraft               bool                `json:"isDraft"`
+	CreatedBy             identityDTO         `json:"createdBy"`
+	SourceRefName         string              `json:"sourceRefName"`
+	TargetRefName         string              `json:"targetRefName"`
+	MergeStatus           string              `json:"mergeStatus"`
+	LastMergeSourceCommit *commitRefDTO       `json:"lastMergeSourceCommit"`
+	LastMergeTargetCommit *commitRefDTO       `json:"lastMergeTargetCommit"`
+	LastMergeCommit       *commitRefDTO       `json:"lastMergeCommit"`
+	Repository            repositoryDTO       `json:"repository"`
+	Links                 pullRequestLinksDTO `json:"_links"`
 }
 
 type threadDTO struct {
@@ -80,6 +82,18 @@ type commentDTO struct {
 	CommentType     string      `json:"commentType"`
 	IsDeleted       bool        `json:"isDeleted"`
 	Author          identityDTO `json:"author"`
+}
+
+type pullRequestIterationDTO struct {
+	ID              int          `json:"id"`
+	Description     string       `json:"description"`
+	Reason          string       `json:"reason"`
+	CreatedDate     string       `json:"createdDate"`
+	UpdatedDate     string       `json:"updatedDate"`
+	Author          identityDTO  `json:"author"`
+	SourceRefCommit *commitRefDTO `json:"sourceRefCommit"`
+	TargetRefCommit *commitRefDTO `json:"targetRefCommit"`
+	CommonRefCommit *commitRefDTO `json:"commonRefCommit"`
 }
 
 type repoScope struct {
@@ -218,7 +232,16 @@ func NormalizeMergeRequestEvents(
 	mrNumber int,
 	threads []threadDTO,
 ) []platform.MergeRequestEvent {
-	events := make([]platform.MergeRequestEvent, 0)
+	return NormalizeMergeRequestTimelineEvents(repo, mrNumber, threads, nil)
+}
+
+func NormalizeMergeRequestTimelineEvents(
+	repo platform.RepoRef,
+	mrNumber int,
+	threads []threadDTO,
+	iterations []pullRequestIterationDTO,
+) []platform.MergeRequestEvent {
+	events := make([]platform.MergeRequestEvent, 0, len(iterations))
 	for _, thread := range threads {
 		for _, comment := range thread.Comments {
 			commentType := strings.TrimSpace(comment.CommentType)
@@ -243,7 +266,109 @@ func NormalizeMergeRequestEvents(
 			})
 		}
 	}
+	iterationEvents := normalizeIterationEvents(repo, mrNumber, iterations)
+	events = append(events, iterationEvents...)
+	sort.SliceStable(events, func(i, j int) bool {
+		if events[i].CreatedAt.Equal(events[j].CreatedAt) {
+			return events[i].DedupeKey < events[j].DedupeKey
+		}
+		return events[i].CreatedAt.Before(events[j].CreatedAt)
+	})
 	return events
+}
+
+type iterationEventMetadata struct {
+	IterationID    int    `json:"iteration_id"`
+	Reason         string `json:"reason,omitempty"`
+	Description    string `json:"description,omitempty"`
+	CompareFromSHA string `json:"compare_from_sha,omitempty"`
+	CompareToSHA   string `json:"compare_to_sha,omitempty"`
+	SourceRefSHA   string `json:"source_ref_sha,omitempty"`
+	TargetRefSHA   string `json:"target_ref_sha,omitempty"`
+	CommonRefSHA   string `json:"common_ref_sha,omitempty"`
+}
+
+func normalizeIterationEvents(
+	repo platform.RepoRef,
+	mrNumber int,
+	iterations []pullRequestIterationDTO,
+) []platform.MergeRequestEvent {
+	if len(iterations) == 0 {
+		return nil
+	}
+	sorted := append([]pullRequestIterationDTO(nil), iterations...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].ID == sorted[j].ID {
+			return iterationTime(sorted[i]).Before(iterationTime(sorted[j]))
+		}
+		return sorted[i].ID < sorted[j].ID
+	})
+	events := make([]platform.MergeRequestEvent, 0, len(sorted))
+	for i, iteration := range sorted {
+		toSHA := commitID(iteration.SourceRefCommit)
+		if toSHA == "" {
+			continue
+		}
+		fromSHA := ""
+		if i > 0 {
+			fromSHA = commitID(sorted[i-1].SourceRefCommit)
+		}
+		if fromSHA == "" {
+			fromSHA = commitID(iteration.CommonRefCommit)
+		}
+		if fromSHA == "" {
+			fromSHA = commitID(iteration.TargetRefCommit)
+		}
+		author, _ := normalizeIdentity(iteration.Author)
+		metadata, _ := json.Marshal(iterationEventMetadata{
+			IterationID:    iteration.ID,
+			Reason:         strings.TrimSpace(iteration.Reason),
+			Description:    strings.TrimSpace(iteration.Description),
+			CompareFromSHA: fromSHA,
+			CompareToSHA:   toSHA,
+			SourceRefSHA:   toSHA,
+			TargetRefSHA:   commitID(iteration.TargetRefCommit),
+			CommonRefSHA:   commitID(iteration.CommonRefCommit),
+		})
+		body := fmt.Sprintf("Source updated: %s -> %s", shortSHA(fromSHA), shortSHA(toSHA))
+		if fromSHA == "" {
+			body = fmt.Sprintf("Source updated to %s", shortSHA(toSHA))
+		}
+		if description := strings.TrimSpace(iteration.Description); description != "" {
+			body += "\n" + description
+		} else if reason := strings.TrimSpace(iteration.Reason); reason != "" {
+			body += "\nReason: " + reason
+		}
+		events = append(events, platform.MergeRequestEvent{
+			Repo:               repo,
+			PlatformID:         int64(iteration.ID),
+			PlatformExternalID: strconv.Itoa(iteration.ID),
+			MergeRequestNumber: mrNumber,
+			EventType:          "iteration",
+			Author:             author,
+			Summary:            fmt.Sprintf("Iteration %d", iteration.ID),
+			Body:               body,
+			MetadataJSON:       string(metadata),
+			CreatedAt:          iterationTime(iteration),
+			DedupeKey:          fmt.Sprintf("%s:%s:%s:mr:%d:iteration:%d", platform.KindAzureDevOps, repo.Host, repo.DisplayName(), mrNumber, iteration.ID),
+		})
+	}
+	return events
+}
+
+func iterationTime(iteration pullRequestIterationDTO) time.Time {
+	if t := parseAzureTime(iteration.UpdatedDate); !t.IsZero() {
+		return t
+	}
+	return parseAzureTime(iteration.CreatedDate)
+}
+
+func shortSHA(sha string) string {
+	sha = strings.TrimSpace(sha)
+	if len(sha) > 7 {
+		return sha[:7]
+	}
+	return sha
 }
 
 func countCommentEvents(events []platform.MergeRequestEvent) int {

@@ -216,10 +216,16 @@ func (c *Client) ListMergeRequestEvents(
 	if err != nil {
 		return nil, err
 	}
-	var response listResponse[threadDTO]
+	var threadResponse listResponse[threadDTO]
 	if err := c.requestJSON(ctx, http.MethodGet, []string{
 		scope.Org, scope.Project, "_apis", "git", "repositories", scope.Repo, "pullRequests", strconv.Itoa(number), "threads",
-	}, nil, &response); err != nil {
+	}, nil, &threadResponse); err != nil {
+		return nil, err
+	}
+	var iterationResponse listResponse[pullRequestIterationDTO]
+	if err := c.requestJSON(ctx, http.MethodGet, []string{
+		scope.Org, scope.Project, "_apis", "git", "repositories", scope.Repo, "pullRequests", strconv.Itoa(number), "iterations",
+	}, nil, &iterationResponse); err != nil {
 		return nil, err
 	}
 	repoRef := ref
@@ -230,7 +236,7 @@ func (c *Client) ListMergeRequestEvents(
 		repoRef.Platform = platform.KindAzureDevOps
 		repoRef.Host = c.host
 	}
-	return NormalizeMergeRequestEvents(repoRef, number, response.Value), nil
+	return NormalizeMergeRequestTimelineEvents(repoRef, number, threadResponse.Value, iterationResponse.Value), nil
 }
 
 func NewCLITokenSource() TokenSource {
