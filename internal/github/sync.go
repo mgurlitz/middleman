@@ -4298,6 +4298,10 @@ func (s *Syncer) fetchProviderMRDetail(
 		)
 	}
 	preserveMergeableStateIfOmitted(normalized, existing)
+	lastActivityBase := normalized.LastActivityAt
+	if providerDetailRefreshesMRActivity(reader) {
+		lastActivityBase = preserveLastActivityDuringProviderMRDetailSync(normalized, existing)
+	}
 
 	mrID, err := s.db.UpsertMergeRequest(ctx, normalized)
 	if err != nil {
@@ -4315,7 +4319,7 @@ func (s *Syncer) fetchProviderMRDetail(
 	}
 
 	detailCalls, pending, err := s.syncProviderMRDetailExtras(
-		ctx, reader, repo, repoID, mrID, number, normalized.PlatformHeadSHA,
+		ctx, reader, repo, repoID, mrID, number, normalized.PlatformHeadSHA, lastActivityBase,
 	)
 	calls += detailCalls
 	if err != nil {
@@ -4349,6 +4353,7 @@ func (s *Syncer) syncProviderMRDetailExtras(
 	mrID int64,
 	number int,
 	headSHA string,
+	lastActivityBase time.Time,
 ) (int, bool, error) {
 	calls := 0
 	events, err := reader.ListMergeRequestEvents(ctx, platformRepoRef(repo), number)
@@ -4364,7 +4369,7 @@ func (s *Syncer) syncProviderMRDetailExtras(
 		if err := s.db.UpsertMREvents(ctx, dbEvents); err != nil {
 			return calls, false, fmt.Errorf("upsert events for MR #%d: %w", number, err)
 		}
-		if err := s.refreshProviderMRDerivedFieldsFromEvents(ctx, repoID, number, events); err != nil {
+		if err := s.refreshProviderMRDerivedFieldsFromEvents(ctx, repoID, number, lastActivityBase, events); err != nil {
 			return calls, false, fmt.Errorf("update derived fields for MR #%d: %w", number, err)
 		}
 	}
@@ -4579,6 +4584,7 @@ func (s *Syncer) refreshProviderMRDerivedFieldsFromEvents(
 	ctx context.Context,
 	repoID int64,
 	number int,
+	lastActivityBase time.Time,
 	events []platform.MergeRequestEvent,
 ) error {
 	current, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
@@ -4589,7 +4595,7 @@ func (s *Syncer) refreshProviderMRDerivedFieldsFromEvents(
 		return fmt.Errorf("merge request not found")
 	}
 	commentCount := 0
-	lastActivityAt := current.LastActivityAt
+	lastActivityAt := lastActivityBase
 	for _, event := range events {
 		if event.EventType == "issue_comment" {
 			commentCount++
@@ -6232,6 +6238,11 @@ func (s *Syncer) syncMRForRepo(
 		}
 	}
 
+	lastActivityBase := normalized.LastActivityAt
+	if ghPR == nil && providerDetailRefreshesMRActivity(mrReader) {
+		lastActivityBase = preserveLastActivityDuringProviderMRDetailSync(normalized, existing)
+	}
+
 	mrID, err := s.db.UpsertMergeRequest(ctx, normalized)
 	if err != nil {
 		return fmt.Errorf("upsert MR #%d: %w", number, err)
@@ -6290,7 +6301,7 @@ func (s *Syncer) syncMRForRepo(
 	} else {
 		pending := false
 		_, pending, err = s.syncProviderMRDetailExtras(
-			ctx, mrReader, repo, repoID, mrID, number, normalized.PlatformHeadSHA,
+			ctx, mrReader, repo, repoID, mrID, number, normalized.PlatformHeadSHA, lastActivityBase,
 		)
 		if err != nil {
 			return err
@@ -6317,6 +6328,32 @@ func (s *Syncer) syncMRForRepo(
 		return diffErr
 	}
 	return nil
+}
+
+func providerDetailRefreshesMRActivity(reader platform.MergeRequestReader) bool {
+	provider, ok := reader.(interface{ Capabilities() platform.Capabilities })
+	if !ok {
+		return false
+	}
+	return provider.Capabilities().ReadComments
+}
+
+// preserveLastActivityDuringProviderMRDetailSync keeps the currently visible
+// activity timestamp stable while provider detail sync is in flight. The
+// returned base timestamp is the provider's own MR activity so the later event
+// refresh can still move LastActivityAt backward when comments were deleted.
+func preserveLastActivityDuringProviderMRDetailSync(
+	normalized *db.MergeRequest,
+	existing *db.MergeRequest,
+) time.Time {
+	if normalized == nil {
+		return time.Time{}
+	}
+	base := normalized.LastActivityAt
+	if existing != nil && existing.LastActivityAt.After(normalized.LastActivityAt) {
+		normalized.LastActivityAt = existing.LastActivityAt
+	}
+	return base
 }
 
 func preserveMergeableStateIfOmitted(
