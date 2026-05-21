@@ -79,6 +79,29 @@ func TestListActivity(t *testing.T) {
 		assert.Equal("alice", items[6].RepoOwner)
 	})
 
+	t.Run("new pr activity prefers author display name", func(t *testing.T) {
+		assert := Assert.New(t)
+		d := openTestDB(t)
+		ctx := t.Context()
+		base := baseTime()
+		repoID := insertTestRepo(t, d, "alice", "alpha")
+		insertTestMRWithOptions(t, d, testMR(
+			repoID,
+			1,
+			withMRTitle("Build service update"),
+			withMRActivity(base),
+			func(mr *MergeRequest) {
+				mr.Author = "svc-principal-1234"
+				mr.AuthorDisplayName = "Acme Build Service"
+			},
+		))
+
+		items, err := d.ListActivity(ctx, ListActivityOpts{Types: []string{"new_pr"}, Limit: 50})
+		require.NoError(t, err)
+		require.Len(t, items, 1)
+		assert.Equal("Acme Build Service", items[0].Author)
+	})
+
 	t.Run("repo filter", func(t *testing.T) {
 		assert := Assert.New(t)
 		items, err := d.ListActivity(ctx, ListActivityOpts{

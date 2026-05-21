@@ -102,7 +102,7 @@ func (d *DB) ListActivity(
 			       'pr' AS item_type, p.number AS item_number,
 			       p.title AS item_title,
 			       p.url AS item_url, p.state AS item_state,
-			       p.author, p.created_at,
+			       COALESCE(NULLIF(p.author_display_name, ''), p.author), p.created_at,
 			       '' AS body_preview
 			FROM middleman_merge_requests p
 			JOIN middleman_repos r ON p.repo_id = r.id

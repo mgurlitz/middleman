@@ -1276,7 +1276,7 @@
         <span class="meta-sep">·</span>
         <CopyItemNumber kind="pull" number={pr.Number} url={pr.URL} />
         <span class="meta-sep">·</span>
-        <span class="meta-item">{pr.Author}</span>
+        <span class="meta-item">{pr.AuthorDisplayName || pr.Author}</span>
         <span class="meta-sep">·</span>
         <span class="meta-item">{timeAgo(pr.CreatedAt)}</span>
         {#if pr.HeadBranch}
