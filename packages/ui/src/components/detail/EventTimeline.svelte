@@ -8,6 +8,10 @@
   import { renderMarkdown } from "../../utils/markdown.js";
   import { timeAgo } from "../../utils/time.js";
   import { copyToClipboard } from "../../utils/clipboard.js";
+  import {
+    providerCommentURL,
+    type TimelineItemType,
+  } from "../../api/provider-links.js";
   import CommentEditor from "./CommentEditor.svelte";
 
   interface Props {
@@ -17,6 +21,8 @@
     repoOwner?: string;
     repoName?: string;
     repoPath?: string | undefined;
+    itemType?: TimelineItemType;
+    itemNumber?: number | undefined;
     filtered?: boolean;
     showCommitDetails?: boolean;
     onEditComment?: ((event: PREvent | IssueEvent, body: string) => Promise<boolean>) | undefined;
@@ -29,6 +35,8 @@
     repoOwner,
     repoName,
     repoPath,
+    itemType = "pull",
+    itemNumber,
     filtered = false,
     showCommitDetails = true,
     onEditComment,
@@ -173,6 +181,22 @@
       }, 1500);
     });
   }
+
+  function commentLink(event: PREvent | IssueEvent): string | null {
+    if (!provider || !repoOwner || !repoName || !repoPath) return null;
+    return providerCommentURL(
+      {
+        provider,
+        platformHost,
+        owner: repoOwner,
+        name: repoName,
+        repoPath,
+      },
+      itemType,
+      itemNumber,
+      event,
+    );
+  }
 </script>
 
 {#if events.length === 0}
@@ -258,6 +282,7 @@
             {#if event.Body}
               <div class="event-body-wrap">
                 <div class="event-actions">
+                  {@const providerUrl = commentLink(event)}
                   {#if canEditComment(event)}
                     <button
                       class="event-action-btn"
@@ -268,6 +293,17 @@
                     >
                       <PencilIcon size={14} />
                     </button>
+                  {/if}
+                  {#if providerUrl}
+                    <a
+                      class="event-action-link"
+                      href={providerUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Open in provider"
+                    >
+                      Open
+                    </a>
                   {/if}
                   <button
                     class="event-action-btn"
@@ -573,12 +609,31 @@
     transition: opacity 0.15s, background 0.15s, color 0.15s;
   }
 
+  .event-action-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--focus-detail-hit-target, 2rem);
+    height: var(--focus-detail-hit-target, 2rem);
+    padding: 0 0.5rem;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    opacity: 0;
+    transition: opacity 0.15s, background 0.15s, color 0.15s;
+  }
+
   .event-body-wrap:hover .event-action-btn,
-  .event-action-btn:focus-visible {
+  .event-body-wrap:hover .event-action-link,
+  .event-action-btn:focus-visible,
+  .event-action-link:focus-visible {
     opacity: 1;
   }
 
-  .event-action-btn:hover:not(:disabled) {
+  .event-action-btn:hover:not(:disabled),
+  .event-action-link:hover {
     background: var(--bg-surface-hover);
     color: var(--text-secondary);
   }
@@ -599,7 +654,8 @@
   }
 
   @media (hover: none) {
-    .event-action-btn {
+    .event-action-btn,
+    .event-action-link {
       opacity: 1;
     }
   }

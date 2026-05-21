@@ -1060,6 +1060,8 @@
             repoOwner={owner}
             repoName={name}
             {repoPath}
+            itemType="issue"
+            itemNumber={number}
             onEditComment={capabilities.comment_mutation && !staleIssue
               ? editTimelineComment
               : undefined}

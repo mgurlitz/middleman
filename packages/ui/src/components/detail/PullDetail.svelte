@@ -1860,6 +1860,8 @@
             repoOwner={owner}
             repoName={name}
             {repoPath}
+            itemType="pull"
+            itemNumber={number}
             filtered={hasActiveTimelineFilters}
             showCommitDetails={timelineFilter.showCommitDetails}
             onEditComment={capabilities.comment_mutation && !stalePR

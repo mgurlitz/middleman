@@ -99,8 +99,11 @@ function renderDiffFile(
   return render(DiffFile, {
     props: {
       file,
+      provider: "github",
+      platformHost: "github.com",
       owner: uniqueOwner(),
       name: "n",
+      repoPath: "o/n",
       number: 1,
       ...(options.richPreviewEnabled !== undefined && {
         richPreviewEnabled: options.richPreviewEnabled,
@@ -152,5 +155,25 @@ describe("DiffFile", () => {
 
     const content = document.querySelector(".file-content");
     expect(content?.classList.contains("file-content--collapsed")).toBe(false);
+  });
+
+  it("renders Azure DevOps file links in the header", () => {
+    render(DiffFile, {
+      props: {
+        file: makeFile({ path: "src/foo.ts" }),
+        provider: "azure_devops",
+        platformHost: "dev.azure.com",
+        owner: "AcmeOrg/Payments",
+        name: "Service",
+        repoPath: "AcmeOrg/Payments/Service",
+        number: 17,
+      },
+      context: new Map([[STORES_KEY, { diff: createDiffStore() }]]),
+    });
+
+    const link = screen.getByTitle("Open in provider");
+    expect(link.getAttribute("href")).toBe(
+      "https://dev.azure.com/AcmeOrg/Payments/_git/Service/pullrequest/17?_a=files&path=%2Fsrc%2Ffoo.ts",
+    );
   });
 });

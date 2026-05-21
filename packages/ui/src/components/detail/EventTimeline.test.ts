@@ -196,6 +196,30 @@ describe("EventTimeline", () => {
     ).toBe(true);
   });
 
+  it("renders Azure DevOps comment links when route context is available", () => {
+    render(EventTimeline, {
+      props: {
+        events: [makeEvent({
+          EventType: "issue_comment",
+          Body: "Comment body",
+          PlatformExternalID: "55:1001",
+        })],
+        provider: "azure_devops",
+        platformHost: "dev.azure.com",
+        repoOwner: "AcmeOrg/Payments",
+        repoName: "Service",
+        repoPath: "AcmeOrg/Payments/Service",
+        itemType: "pull",
+        itemNumber: 17,
+      },
+    });
+
+    const link = screen.getByTitle("Open in provider");
+    expect(link.getAttribute("href")).toBe(
+      "https://dev.azure.com/AcmeOrg/Payments/_git/Service/pullrequest/17?_a=overview&discussionId=55",
+    );
+  });
+
   it("renders system events as compact rows", () => {
     render(EventTimeline, {
       props: {
