@@ -40,7 +40,7 @@ vi.mock("../context.js", () => ({
       startActivityPolling: vi.fn(),
       stopActivityPolling: vi.fn(),
       getActivitySearch: () => "",
-      getEnabledEvents: () => new Set(["comment", "review", "commit", "force_push"]),
+      getEnabledEvents: () => new Set(["comment", "review", "commit", "force_push", "iteration"]),
       getHideClosedMerged: () => false,
       getHideBots: () => false,
       getItemFilter: () => "all",
@@ -135,6 +135,22 @@ describe("ActivityFeed compact mode", () => {
     expect(
       container.querySelectorAll(".activity-compact-row.selected"),
     ).toHaveLength(2);
+  });
+
+  it("renders iteration activity labels in compact rows", () => {
+    items.value = [
+      activityItem("iteration", {
+        activity_type: "iteration",
+      }),
+    ];
+
+    render(ActivityFeed, {
+      props: {
+        compact: true,
+      },
+    });
+
+    expect(screen.getByText("Iteration")).toBeTruthy();
   });
 
   it("uses shared semantic chips for compact item kind and state", () => {

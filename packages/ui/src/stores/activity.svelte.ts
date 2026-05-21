@@ -14,6 +14,7 @@ const DEFAULT_EVENT_TYPES = [
   "review",
   "commit",
   "force_push",
+  "iteration",
 ] as const;
 
 const RANGE_MS: Record<TimeRange, number> = {
