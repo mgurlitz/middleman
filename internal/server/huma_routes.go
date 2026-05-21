@@ -914,7 +914,7 @@ func (s *Server) buildPullDetailResponse(
 		MergeBaseSHA:     mr.MergeBaseSHA,
 		WorktreeLinks:    toWorktreeLinkResponses(dbLinks),
 		WorkflowApproval: s.workflowApprovalState(ctx, repo.Owner, repo.Name, mr),
-		Warnings:         s.diffWarnings(mr),
+		Warnings:         s.diffWarnings(*repo, mr),
 		DetailLoaded:     mr.DetailFetchedAt != nil,
 	}
 	if mr.DetailFetchedAt != nil {
@@ -944,8 +944,11 @@ func (s *Server) buildPullDetailResponse(
 // warnings field) or after a refresh would see no indication that the
 // diff is unavailable. We therefore emit a sanitized warning whenever a
 // PR that should have diff data is missing it.
-func (s *Server) diffWarnings(mr *db.MergeRequest) []string {
+func (s *Server) diffWarnings(repo db.Repo, mr *db.MergeRequest) []string {
 	if mr == nil {
+		return nil
+	}
+	if !platform.SupportsLocalClone(repoProviderKind(repo)) {
 		return nil
 	}
 	if !s.syncer.HasDiffSync() {
@@ -2898,15 +2901,17 @@ func (s *Server) lookupStarredRepoID(ctx context.Context, body starredRequest) (
 type getCommitsOutput = bodyOutput[commitsResponse]
 
 func (s *Server) getCommits(ctx context.Context, input *repoNumberInput) (*getCommitsOutput, error) {
-	if s.clones == nil {
-		return nil, problemServiceUnavailable("commits not available: clone manager not configured")
-	}
-
 	repo, err := s.lookupRepoByProviderRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
 	if err != nil {
 		return nil, providerRouteLookupError(err)
+	}
+	if !platform.SupportsLocalClone(repoProviderKind(*repo)) {
+		return nil, unsupportedCapabilityProblem(*repo, capabilityLocalClone)
+	}
+	if s.clones == nil {
+		return nil, problemServiceUnavailable("commits not available: clone manager not configured")
 	}
 	shas, err := s.db.GetDiffSHAsByRepoID(ctx, repo.ID, input.Number)
 	if err != nil {
@@ -3043,6 +3048,15 @@ func (s *Server) resolveDiffRange(
 }
 
 func (s *Server) getDiff(ctx context.Context, input *getDiffInput) (*getDiffOutput, error) {
+	repo, err := s.lookupRepoByProviderRoute(
+		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
+	)
+	if err != nil {
+		return nil, providerRouteLookupError(err)
+	}
+	if !platform.SupportsLocalClone(repoProviderKind(*repo)) {
+		return nil, unsupportedCapabilityProblem(*repo, capabilityLocalClone)
+	}
 	if s.clones == nil {
 		return nil, problemServiceUnavailable("diff view not available: clone manager not configured")
 	}
@@ -3090,6 +3104,15 @@ type getFilePreviewInput struct {
 type getFilePreviewOutput = bodyOutput[filePreviewResponse]
 
 func (s *Server) getFilePreview(ctx context.Context, input *getFilePreviewInput) (*getFilePreviewOutput, error) {
+	repo, err := s.lookupRepoByProviderRoute(
+		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
+	)
+	if err != nil {
+		return nil, providerRouteLookupError(err)
+	}
+	if !platform.SupportsLocalClone(repoProviderKind(*repo)) {
+		return nil, unsupportedCapabilityProblem(*repo, capabilityLocalClone)
+	}
 	if s.clones == nil {
 		return nil, problemServiceUnavailable("file preview not available: clone manager not configured")
 	}
@@ -3210,16 +3233,19 @@ type getFilesInput struct {
 type getFilesOutput = bodyOutput[filesResponse]
 
 func (s *Server) getFiles(ctx context.Context, input *getFilesInput) (*getFilesOutput, error) {
-	if s.clones == nil {
-		return nil, problemServiceUnavailable("files view not available: clone manager not configured")
-	}
-
 	repo, err := s.lookupRepoByProviderRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
 	if err != nil {
 		return nil, providerRouteLookupError(err)
 	}
+	if !platform.SupportsLocalClone(repoProviderKind(*repo)) {
+		return nil, unsupportedCapabilityProblem(*repo, capabilityLocalClone)
+	}
+	if s.clones == nil {
+		return nil, problemServiceUnavailable("files view not available: clone manager not configured")
+	}
+
 	shas, err := s.db.GetDiffSHAsByRepoID(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, problemInternal("failed to look up PR")
@@ -3353,6 +3379,16 @@ func (s *Server) createWorkspace(
 	if s.workspaces == nil {
 		return nil, problemServiceUnavailable("workspace manager not configured")
 	}
+	repo, err := s.lookupRepo(ctx, input.Body.Owner, input.Body.Name, input.Body.PlatformHost)
+	if err != nil {
+		if errors.Is(err, errRepoNotFound) {
+			return nil, problemNotFound(CodeRepoNotFound, err.Error(), nil)
+		}
+		return nil, problemInternal("repo lookup failed")
+	}
+	if !platform.SupportsLocalClone(repoProviderKind(*repo)) {
+		return nil, unsupportedCapabilityProblem(*repo, capabilityLocalClone)
+	}
 
 	ws, err := s.workspaces.Create(
 		ctx,
@@ -3481,6 +3517,9 @@ func (s *Server) createIssueWorkspace(
 	)
 	if err != nil {
 		return nil, providerRouteLookupError(err)
+	}
+	if !platform.SupportsLocalClone(repoProviderKind(*repo)) {
+		return nil, unsupportedCapabilityProblem(*repo, capabilityLocalClone)
 	}
 
 	existing, err := s.workspaces.GetByIssue(

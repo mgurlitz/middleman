@@ -1235,6 +1235,10 @@ func repoRateBucketKey(repo RepoRef) string {
 	return rateBucketKeyFor(repoPlatform(repo), repoHost(repo))
 }
 
+func repoSupportsLocalClone(repo RepoRef) bool {
+	return platform.SupportsLocalClone(repoPlatform(repo))
+}
+
 func watchedMRRateBucketKey(mr WatchedMR) string {
 	return rateBucketKeyFor(watchedMRPlatform(mr), watchedMRHost(mr))
 }
@@ -2232,7 +2236,7 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 	// Fetch bare clone before PR data so refs are available for merge-base.
 	host := repoHost(repo)
 	cloneFetchOK := false
-	if s.clones != nil {
+	if s.clones != nil && repoSupportsLocalClone(repo) {
 		if err := s.clones.EnsureClone(ctx, host, repo.Owner, repo.Name, cloneRemoteURL(repo)); err != nil {
 			slog.Warn("bare clone fetch failed",
 				"repo", repo.Owner+"/"+repo.Name, "err", err,
@@ -4346,6 +4350,9 @@ func (s *Syncer) syncProviderMRDetailExtras(
 		if err := s.db.UpsertMREvents(ctx, dbEvents); err != nil {
 			return calls, false, fmt.Errorf("upsert events for MR #%d: %w", number, err)
 		}
+		if err := s.refreshProviderMRDerivedFieldsFromEvents(ctx, repoID, number, events); err != nil {
+			return calls, false, fmt.Errorf("update derived fields for MR #%d: %w", number, err)
+		}
 	}
 
 	pending := false
@@ -4552,6 +4559,36 @@ func (s *Syncer) fetchProviderIssueDetail(
 	}
 
 	return calls, nil
+}
+
+func (s *Syncer) refreshProviderMRDerivedFieldsFromEvents(
+	ctx context.Context,
+	repoID int64,
+	number int,
+	events []platform.MergeRequestEvent,
+) error {
+	current, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
+	if err != nil {
+		return fmt.Errorf("load merge request: %w", err)
+	}
+	if current == nil {
+		return fmt.Errorf("merge request not found")
+	}
+	commentCount := 0
+	lastActivityAt := current.LastActivityAt
+	for _, event := range events {
+		if event.EventType == "issue_comment" {
+			commentCount++
+		}
+		if event.CreatedAt.After(lastActivityAt) {
+			lastActivityAt = event.CreatedAt
+		}
+	}
+	return s.db.UpdateMRDerivedFields(ctx, repoID, number, db.MRDerivedFields{
+		ReviewDecision: current.ReviewDecision,
+		CommentCount:   commentCount,
+		LastActivityAt: lastActivityAt,
+	})
 }
 
 func (s *Syncer) updateMRDetailFetchedByRepoID(
@@ -5612,7 +5649,7 @@ func (s *Syncer) drainDetailQueue(
 
 		// Compute diff SHAs if clone available.
 		cloneFetchOK := false
-		if s.clones != nil {
+		if s.clones != nil && repoSupportsLocalClone(repo) {
 			if cloneErr := s.clones.EnsureClone(
 				ctx, host, qi.RepoOwner, qi.RepoName,
 				cloneRemoteURL(repo),
@@ -6319,7 +6356,7 @@ func (s *Syncer) syncMRDiff(
 	ctx context.Context, repo RepoRef, repoID int64, number int,
 	ghPR *gh.PullRequest, normalized *db.MergeRequest,
 ) error {
-	if s.clones == nil {
+	if s.clones == nil || !repoSupportsLocalClone(repo) {
 		return nil
 	}
 	host := repoHost(repo)

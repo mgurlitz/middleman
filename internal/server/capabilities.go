@@ -17,6 +17,7 @@ const (
 	capabilityIssueMutation    = "issue_mutation"
 	capabilityReadLabels       = "read_labels"
 	capabilityLabelMutation    = "label_mutation"
+	capabilityLocalClone       = "local_clone"
 )
 
 func capabilityEnabled(

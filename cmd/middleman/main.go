@@ -568,11 +568,14 @@ func validateProviderHostKeys(providerTokens map[string]string) error {
 	for key, token := range providerTokens {
 		platformName, host := splitProviderHostKey(key)
 		if existing, ok := byHost[host]; ok {
-			if existing.token != token {
+			if existing.token != "" && token != "" && existing.token != token {
 				return fmt.Errorf(
 					"host %s is configured for both %s and %s with different clone tokens; use identical tokens or separate hosts",
 					host, existing.platform, platformName,
 				)
+			}
+			if existing.token == "" && token != "" {
+				byHost[host] = hostToken{platform: platformName, token: token}
 			}
 			continue
 		}

@@ -153,12 +153,39 @@ func TestValidateProviderHostKeysAllowsMixedProvidersOnSameHostWithSameToken(t *
 	require.NoError(t, err)
 }
 
+func TestValidateProviderHostKeysAllowsAzureDevOpsWithoutCloneToken(t *testing.T) {
+	err := validateProviderHostKeys(map[string]string{
+		providerHostKey("azure_devops", "code.example.com"): "",
+		providerHostKey("gitlab", "code.example.com"):       "gitlab-token",
+	})
+
+	require.NoError(t, err)
+}
+
+func TestCollectProviderTokensAllowsAzureDevOpsWithoutConfiguredToken(t *testing.T) {
+	cfg := &config.Config{
+		GitHubTokenEnv: "UNUSED",
+		Repos: []config.Repo{{
+			Platform:     "azure_devops",
+			PlatformHost: "dev.azure.com",
+			Owner:        "AcmeOrg/Payments",
+			Name:         "Service",
+			RepoPath:     "AcmeOrg/Payments/Service",
+		}},
+	}
+
+	tokens, err := collectProviderTokens(cfg)
+	require.NoError(t, err)
+	assert.Equal(t, "", tokens[providerHostKey("azure_devops", "dev.azure.com")])
+}
+
 func TestDefaultProviderFactoriesRegisterForgejoAndGitea(t *testing.T) {
 	factories := defaultProviderFactories()
 
 	assert := Assert.New(t)
 	assert.Contains(factories, string(platform.KindForgejo))
 	assert.Contains(factories, string(platform.KindGitea))
+	assert.Contains(factories, string(platform.KindAzureDevOps))
 }
 
 func TestBuildProviderStartupKeepsForgeProviderHostsDistinct(t *testing.T) {
@@ -219,6 +246,37 @@ func TestBuildProviderStartupKeepsForgeProviderHostsDistinct(t *testing.T) {
 	require.NoError(err)
 	assert.NotNil(forgejoReader)
 	assert.NotNil(giteaReader)
+}
+
+func TestBuildProviderStartupRegistersAzureDevOpsProviderWithoutStartupToken(t *testing.T) {
+	require := require.New(t)
+	assert := Assert.New(t)
+
+	database := dbtest.Open(t)
+	called := false
+	startup, err := buildProviderStartup(
+		database,
+		&config.Config{},
+		map[string]string{providerHostKey(string(platform.KindAzureDevOps), platform.DefaultAzureDevOpsHost): ""},
+		map[string]providerFactory{
+			string(platform.KindAzureDevOps): func(input providerFactoryInput) (providerFactoryOutput, error) {
+				called = true
+				assert.Equal(platform.DefaultAzureDevOpsHost, input.host)
+				assert.Empty(input.token)
+				return providerFactoryOutput{provider: mainTestRepositoryReader{
+					kind: platform.KindAzureDevOps,
+					host: input.host,
+				}}, nil
+			},
+		},
+	)
+	require.NoError(err)
+	assert.True(called)
+	assert.Empty(startup.cloneTokens)
+
+	reader, err := startup.registry.RepositoryReader(platform.KindAzureDevOps, platform.DefaultAzureDevOpsHost)
+	require.NoError(err)
+	assert.NotNil(reader)
 }
 
 func TestBuildProviderStartupUsesRegisteredFactoryForFutureProvider(t *testing.T) {

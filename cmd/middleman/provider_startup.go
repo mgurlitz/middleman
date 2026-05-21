@@ -7,6 +7,7 @@ import (
 	"github.com/wesm/middleman/internal/db"
 	"github.com/wesm/middleman/internal/github"
 	"github.com/wesm/middleman/internal/platform"
+	azuredevopsclient "github.com/wesm/middleman/internal/platform/azuredevops"
 	forgejoclient "github.com/wesm/middleman/internal/platform/forgejo"
 	giteaclient "github.com/wesm/middleman/internal/platform/gitea"
 	gitlabclient "github.com/wesm/middleman/internal/platform/gitlab"
@@ -81,6 +82,16 @@ func defaultProviderFactories() map[string]providerFactory {
 			}
 			return providerFactoryOutput{provider: client}, nil
 		},
+		string(platform.KindAzureDevOps): func(input providerFactoryInput) (providerFactoryOutput, error) {
+			client, err := azuredevopsclient.NewClient(
+				input.host,
+				azuredevopsclient.WithRateTracker(input.rateTracker),
+			)
+			if err != nil {
+				return providerFactoryOutput{}, err
+			}
+			return providerFactoryOutput{provider: client}, nil
+		},
 	}
 }
 
@@ -94,7 +105,7 @@ func collectProviderTokens(cfg *config.Config) (map[string]string, error) {
 			continue
 		}
 		token := cfg.ResolveRepoToken(r)
-		if token == "" {
+		if token == "" && platformName != string(platform.KindAzureDevOps) {
 			return nil, fmt.Errorf(
 				"no token for %s host %s (repo %s/%s)",
 				platformName, host, r.Owner, r.Name,
@@ -108,7 +119,7 @@ func collectProviderTokens(cfg *config.Config) (map[string]string, error) {
 			continue
 		}
 		token := cfg.TokenForPlatformHost(p.Type, p.Host, "")
-		if token != "" {
+		if token != "" || p.Type == string(platform.KindAzureDevOps) {
 			providerTokens[key] = token
 		}
 	}
@@ -120,6 +131,13 @@ func collectProviderTokens(cfg *config.Config) (map[string]string, error) {
 		if _, ok := providerTokens[defaultGitHubKey]; !ok {
 			providerTokens[defaultGitHubKey] = globalGitHubToken
 		}
+	}
+	azureDefaultKey := providerHostKey(
+		string(platform.KindAzureDevOps),
+		platform.DefaultAzureDevOpsHost,
+	)
+	if _, ok := providerTokens[azureDefaultKey]; !ok {
+		providerTokens[azureDefaultKey] = ""
 	}
 	if err := validateProviderHostKeys(providerTokens); err != nil {
 		return nil, err
@@ -183,8 +201,10 @@ func buildProviderStartup(
 		if built.githubToken != "" {
 			githubTokens[host] = built.githubToken
 		}
-		if _, ok := startup.cloneTokens[host]; !ok {
-			startup.cloneTokens[host] = token
+		if token != "" {
+			if _, ok := startup.cloneTokens[host]; !ok {
+				startup.cloneTokens[host] = token
+			}
 		}
 	}
 	registry, err := github.NewProviderRegistry(clients, providers...)
