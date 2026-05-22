@@ -27,6 +27,10 @@ function providerHost(ref: ProviderRouteRef): string {
       return "dev.azure.com";
     case "gitlab":
       return "gitlab.com";
+    case "forgejo":
+      return "codeberg.org";
+    case "gitea":
+      return "gitea.com";
     case "github":
     default:
       return "github.com";
@@ -42,6 +46,13 @@ function joinPathSegments(...segments: string[]): string {
 
 function azureRepoBaseURL(ref: ProviderRouteRef): string {
   return `https://${providerHost(ref)}/${joinPathSegments(ref.owner)}/_git/${encodeURIComponent(ref.name)}`;
+}
+
+export function providerRepoURL(ref: ProviderRouteRef): string {
+  if (canonicalProvider(ref.provider) === "azure_devops") {
+    return azureRepoBaseURL(ref);
+  }
+  return `https://${providerHost(ref)}/${joinPathSegments(ref.owner, ref.name)}`;
 }
 
 export function providerCommentURL(

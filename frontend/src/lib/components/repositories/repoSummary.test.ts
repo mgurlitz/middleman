@@ -3,6 +3,7 @@ import type { RepoSummary } from "@middleman/ui/api/types";
 
 import {
   defaultProviderCapabilities,
+  externalRepoURL,
   normalizeSummaries,
   repoKey,
   shouldShowPlatformHost,
@@ -43,6 +44,37 @@ describe("repo summary labels", () => {
 
     expect(shouldShowPlatformHost(summary)).toBe(true);
     expect(repoKey(summary)).toBe("ghe.example.com/acme/widgets");
+  });
+
+  it("builds Azure DevOps external repo links with the _git segment", () => {
+    const [summary] = normalizeSummaries([{
+      owner: "AcmeOrg/Payments",
+      name: "Service",
+      platform_host: "dev.azure.com",
+      repo: {
+        provider: "azure_devops",
+        platform_host: "dev.azure.com",
+        owner: "AcmeOrg/Payments",
+        name: "Service",
+        repo_path: "AcmeOrg/Payments/Service",
+      },
+      default_platform_host: "dev.azure.com",
+      cached_pr_count: 0,
+      open_pr_count: 0,
+      draft_pr_count: 0,
+      cached_issue_count: 0,
+      open_issue_count: 0,
+      active_authors: null,
+      recent_issues: null,
+      commit_timeline: null,
+      releases: null,
+    } as unknown as RepoSummary]);
+
+    expect(summary).toBeDefined();
+    if (!summary) throw new Error("summary missing");
+    expect(externalRepoURL(summary)).toBe(
+      "https://dev.azure.com/AcmeOrg/Payments/_git/Service",
+    );
   });
 
   it("defaults missing repo capabilities when provider identity is present", () => {

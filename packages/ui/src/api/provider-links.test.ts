@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { providerCommentURL, providerDiffFileURL } from "./provider-links.js";
+import { providerCommentURL, providerDiffFileURL, providerRepoURL } from "./provider-links.js";
 import type { PREvent } from "./types.js";
 
 function makeEvent(overrides: Partial<PREvent> = {}): PREvent {
@@ -50,6 +50,18 @@ describe("provider links", () => {
       { path: "src/handler.go" },
     )).toBe(
       "https://dev.azure.com/AcmeOrg/Payments/_git/Service/pullrequest/17?_a=files&path=%2Fsrc%2Fhandler.go",
+    );
+  });
+
+  it("builds Azure DevOps repo links with the _git path segment", () => {
+    expect(providerRepoURL({
+      provider: "azure_devops",
+      platformHost: "dev.azure.com",
+      owner: "AcmeOrg/Payments",
+      name: "Service",
+      repoPath: "AcmeOrg/Payments/Service",
+    })).toBe(
+      "https://dev.azure.com/AcmeOrg/Payments/_git/Service",
     );
   });
 
