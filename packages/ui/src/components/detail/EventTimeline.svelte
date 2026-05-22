@@ -48,6 +48,7 @@
     commit: "Commit",
     force_push: "Force-pushed",
     iteration: "Iteration",
+    merged: "Merged",
     review_comment: "Review Comment",
   };
 
@@ -58,6 +59,7 @@
     commit: "var(--accent-green)",
     force_push: "var(--accent-red)",
     iteration: "var(--accent-amber)",
+    merged: "var(--accent-purple)",
   };
 
   function shouldRenderMarkdown(eventType: string): boolean {
@@ -68,6 +70,7 @@
     return (
       eventType === "commit" ||
       eventType === "force_push" ||
+      eventType === "merged" ||
       eventType === "cross_referenced" ||
       eventType === "renamed_title" ||
       eventType === "base_ref_changed"

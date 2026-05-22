@@ -271,6 +271,33 @@ func TestNormalizePullRequestMapsAzureFieldsAndThreads(t *testing.T) {
 	assert.Equal(t, time.Date(2026, 5, 21, 12, 0, 0, 0, time.UTC), latestEventTime(events))
 }
 
+func TestNormalizeMergeRequestTimelineEventsIncludesMergedSystemEvents(t *testing.T) {
+	ref := platform.RepoRef{
+		Platform: platform.KindAzureDevOps,
+		Host:     "dev.azure.com",
+		Owner:    "AcmeOrg/Payments",
+		Name:     "Service",
+		RepoPath: "AcmeOrg/Payments/Service",
+	}
+
+	events := NormalizeMergeRequestTimelineEvents(ref, 17, []threadDTO{{
+		ID: 55,
+		Comments: []commentDTO{
+			{ID: 1001, CommentType: "text", Content: "Looks good", PublishedDate: "2026-05-21T12:00:00Z", Author: identityDTO{DisplayName: "Grace Hopper"}},
+			{ID: 1002, CommentType: "system", Content: "Merged", PublishedDate: "2026-05-21T12:06:00Z", Author: identityDTO{DisplayName: "Merge Bot"}},
+		},
+	}}, nil)
+
+	require.Len(t, events, 2)
+	assert.Equal(t, "issue_comment", events[0].EventType)
+	assert.Equal(t, "merged", events[1].EventType)
+	assert.Equal(t, "Merged", events[1].Summary)
+	assert.Equal(t, "Merged", events[1].Body)
+	assert.Equal(t, "Merge Bot", events[1].Author)
+	assert.Equal(t, "azure_devops:dev.azure.com:AcmeOrg/Payments/Service:mr:17:thread:55:comment:1002", events[1].DedupeKey)
+	assert.Equal(t, time.Date(2026, 5, 21, 12, 6, 0, 0, time.UTC), latestEventTime(events))
+}
+
 func TestNormalizeMergeRequestTimelineEventsAddsIterationEvents(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

@@ -243,6 +243,26 @@ describe("EventTimeline", () => {
     expect(screen.getByText(/Source updated: abc1234 -> def5678/)).toBeTruthy();
   });
 
+  it("renders merged events as compact rows", () => {
+    render(EventTimeline, {
+      props: {
+        events: [makeEvent({
+          EventType: "merged",
+          Author: "Merge Bot",
+          Summary: "Merged",
+          Body: "Merged",
+        })],
+      },
+    });
+
+    const label = screen.getByText("Merged");
+    expect(label).toBeTruthy();
+    expect(label.getAttribute("style")).toContain("var(--accent-purple)");
+    expect(screen.getByText("Merge Bot")).toBeTruthy();
+    expect(document.querySelector(".event--compact")).not.toBeNull();
+    expect(screen.getAllByText("Merged")).toHaveLength(2);
+  });
+
   it("renders system events as compact rows", () => {
     render(EventTimeline, {
       props: {

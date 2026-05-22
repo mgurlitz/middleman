@@ -52,6 +52,21 @@ describe("ActivityThreaded", () => {
     groupByRepo.value = false;
   });
 
+  it("renders merged activity with the shared merged label", () => {
+    render(ActivityThreaded, {
+      props: {
+        items: [activityItem("merged", {
+          activity_type: "merged",
+          body_preview: "Merged",
+          item_state: "merged",
+        })],
+        onSelectItem: undefined,
+      },
+    });
+
+    expect(document.querySelector(".event-type.evt-merged")?.textContent).toContain("Merged");
+  });
+
   it("keeps repo chip selector compatibility and applies ellipsis to an inner label", () => {
     const { container } = render(ActivityThreaded, {
       props: {

@@ -244,26 +244,11 @@ func NormalizeMergeRequestTimelineEvents(
 	events := make([]platform.MergeRequestEvent, 0, len(iterations))
 	for _, thread := range threads {
 		for _, comment := range thread.Comments {
-			commentType := strings.TrimSpace(comment.CommentType)
-			if comment.IsDeleted || (commentType != "" && !strings.EqualFold(commentType, "text")) {
+			event, ok := normalizeThreadCommentEvent(repo, mrNumber, thread, comment)
+			if !ok {
 				continue
 			}
-			body := strings.TrimSpace(comment.Content)
-			if body == "" {
-				continue
-			}
-			author, _ := normalizeIdentity(comment.Author)
-			events = append(events, platform.MergeRequestEvent{
-				Repo:               repo,
-				PlatformID:         comment.ID,
-				PlatformExternalID: fmt.Sprintf("%d:%d", thread.ID, comment.ID),
-				MergeRequestNumber: mrNumber,
-				EventType:          "issue_comment",
-				Author:             author,
-				Body:               body,
-				CreatedAt:          commentTime(comment),
-				DedupeKey:          fmt.Sprintf("%s:%s:%s:mr:%d:thread:%d:comment:%d", platform.KindAzureDevOps, repo.Host, repo.DisplayName(), mrNumber, thread.ID, comment.ID),
-			})
+			events = append(events, event)
 		}
 	}
 	iterationEvents := normalizeIterationEvents(repo, mrNumber, iterations)
@@ -275,6 +260,53 @@ func NormalizeMergeRequestTimelineEvents(
 		return events[i].CreatedAt.Before(events[j].CreatedAt)
 	})
 	return events
+}
+
+func normalizeThreadCommentEvent(
+	repo platform.RepoRef,
+	mrNumber int,
+	thread threadDTO,
+	comment commentDTO,
+) (platform.MergeRequestEvent, bool) {
+	commentType := strings.ToLower(strings.TrimSpace(comment.CommentType))
+	if comment.IsDeleted {
+		return platform.MergeRequestEvent{}, false
+	}
+	body := strings.TrimSpace(comment.Content)
+	author, _ := normalizeIdentity(comment.Author)
+	event := platform.MergeRequestEvent{
+		Repo:               repo,
+		PlatformID:         comment.ID,
+		PlatformExternalID: fmt.Sprintf("%d:%d", thread.ID, comment.ID),
+		MergeRequestNumber: mrNumber,
+		Author:             author,
+		CreatedAt:          commentTime(comment),
+		DedupeKey:          fmt.Sprintf("%s:%s:%s:mr:%d:thread:%d:comment:%d", platform.KindAzureDevOps, repo.Host, repo.DisplayName(), mrNumber, thread.ID, comment.ID),
+	}
+	switch commentType {
+	case "", "text":
+		if body == "" {
+			return platform.MergeRequestEvent{}, false
+		}
+		event.EventType = "issue_comment"
+		event.Body = body
+		return event, true
+	case "system":
+		if !isMergedSystemComment(body) {
+			return platform.MergeRequestEvent{}, false
+		}
+		event.EventType = "merged"
+		event.Summary = "Merged"
+		event.Body = body
+		return event, true
+	default:
+		return platform.MergeRequestEvent{}, false
+	}
+}
+
+func isMergedSystemComment(body string) bool {
+	normalized := strings.Trim(strings.ToLower(strings.TrimSpace(body)), ".!?")
+	return normalized == "merged" || strings.HasPrefix(normalized, "merged ")
 }
 
 type iterationEventMetadata struct {

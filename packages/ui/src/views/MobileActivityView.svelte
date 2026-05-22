@@ -138,7 +138,7 @@
     }
 
     const allSelected = filter === "all"
-      && activity.getEnabledEvents().size === 5;
+      && activity.getEnabledEvents().size === 6;
     activity.setActivityFilterTypes(allSelected ? [] : types);
     activity.syncToURL();
     void activity.loadActivity();
@@ -203,6 +203,8 @@
         return "Force-pushed";
       case "iteration":
         return "Iteration";
+      case "merged":
+        return "Merged";
       default:
         return type;
     }
@@ -228,6 +230,7 @@
       case "commit": return "commit";
       case "force_push": return "force-push";
       case "iteration": return "iteration";
+      case "merged": return "merged";
       default: return "opened";
     }
   }
@@ -353,6 +356,7 @@
                   class:event-commit={eventTone(event.activity_type) === "commit"}
                   class:event-force-push={eventTone(event.activity_type) === "force-push"}
                   class:event-iteration={eventTone(event.activity_type) === "iteration"}
+                  class:event-merged={eventTone(event.activity_type) === "merged"}
                   onclick={() => onSelectItem?.(event)}
                 >
                   <span class="mobile-activity-event__dot" aria-hidden="true"></span>
@@ -688,6 +692,10 @@
 
   .mobile-activity-event.event-iteration .mobile-activity-event__dot {
     background: var(--accent-amber);
+  }
+
+  .mobile-activity-event.event-merged .mobile-activity-event__dot {
+    background: var(--accent-purple);
   }
 
   .mobile-activity-event__body {

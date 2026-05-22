@@ -6820,6 +6820,14 @@ func (s *Syncer) fetchAndUpdateClosedMergeRequest(
 		return fmt.Errorf("get closed MR #%d: %w", number, err)
 	}
 	normalized := platform.DBMergeRequest(repoID, mr)
+	existing, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
+	if err != nil {
+		return fmt.Errorf("get existing closed MR #%d: %w", number, err)
+	}
+	lastActivityBase := normalized.LastActivityAt
+	if providerDetailRefreshesMRActivity(reader) {
+		lastActivityBase = preserveLastActivityDuringProviderMRDetailSync(normalized, existing)
+	}
 	mrID, err := s.db.UpsertMergeRequest(ctx, normalized)
 	if err != nil {
 		return fmt.Errorf("upsert closed MR #%d: %w", number, err)
@@ -6841,6 +6849,11 @@ func (s *Syncer) fetchAndUpdateClosedMergeRequest(
 			"number", number,
 			"err", err,
 		)
+	}
+	if _, _, err := s.syncProviderMRDetailExtras(
+		ctx, reader, repo, repoID, mrID, number, "", lastActivityBase,
+	); err != nil {
+		return err
 	}
 	return nil
 }

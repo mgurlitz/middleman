@@ -294,6 +294,269 @@ func TestAPIAzureDevOpsReadOnlySyncPersistsThroughServer(t *testing.T) {
 	}, 5*time.Second, 25*time.Millisecond)
 }
 
+func TestAPIAzureDevOpsMergedEventsAppearInDetailAndActivityAfterClosure(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	openedAt := time.Date(2026, 5, 21, 12, 0, 0, 0, time.UTC)
+	mergedAt := openedAt.Add(8 * time.Minute)
+	remote, baseSHA, headSHA := setupAzureDevOpsCloneFixture(t)
+
+	merged := false
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.EscapedPath() {
+		case "/AcmeOrg/Payments/_apis/git/repositories/Service":
+			_, _ = w.Write([]byte(`{
+				"id": "repo-guid",
+				"name": "Service",
+				"webUrl": "https://dev.azure.com/AcmeOrg/Payments/_git/Service",
+				"remoteUrl": "https://dev.azure.com/AcmeOrg/Payments/_git/Service",
+				"defaultBranch": "refs/heads/main",
+				"project": {
+					"id": "project-guid",
+					"name": "Payments",
+					"visibility": "private",
+					"lastUpdateTime": "2026-05-21T12:00:00Z"
+				}
+			}`))
+		case "/AcmeOrg/Payments/_apis/git/repositories/Service/pullRequests":
+			assert.Equal("active", r.URL.Query().Get("searchCriteria.status"))
+			if merged {
+				_, _ = w.Write([]byte(`{"count": 0, "value": []}`))
+				return
+			}
+			_, _ = w.Write([]byte(fmt.Sprintf(`{
+				"count": 1,
+				"value": [{
+					"pullRequestId": 17,
+					"status": "active",
+					"title": "Azure DevOps provider PR",
+					"description": "POC body",
+					"creationDate": "2026-05-21T12:00:00Z",
+					"createdBy": {
+						"displayName": "Ada Lovelace",
+						"uniqueName": "ada@example.com"
+					},
+					"sourceRefName": "refs/heads/feature/ado",
+					"targetRefName": "refs/heads/main",
+					"mergeStatus": "conflicts",
+					"lastMergeSourceCommit": {"commitId": %q},
+					"lastMergeTargetCommit": {"commitId": %q},
+					"repository": {
+						"id": "repo-guid",
+						"name": "Service",
+						"webUrl": "https://dev.azure.com/AcmeOrg/Payments/_git/Service",
+						"remoteUrl": "https://dev.azure.com/AcmeOrg/Payments/_git/Service",
+						"defaultBranch": "refs/heads/main",
+						"project": {
+							"id": "project-guid",
+							"name": "Payments",
+							"visibility": "private",
+							"lastUpdateTime": "2026-05-21T12:00:00Z"
+						}
+					},
+					"_links": {
+						"web": {"href": "https://dev.azure.com/AcmeOrg/Payments/_git/Service/pullrequest/17"}
+					}
+				}]
+			}`, headSHA, baseSHA)))
+		case "/AcmeOrg/Payments/_apis/git/repositories/Service/pullRequests/17":
+			if merged {
+				_, _ = w.Write([]byte(fmt.Sprintf(`{
+					"pullRequestId": 17,
+					"status": "completed",
+					"title": "Azure DevOps provider PR",
+					"description": "POC body",
+					"creationDate": "2026-05-21T12:00:00Z",
+					"closedDate": %q,
+					"createdBy": {
+						"displayName": "Ada Lovelace",
+						"uniqueName": "ada@example.com"
+					},
+					"sourceRefName": "refs/heads/feature/ado",
+					"targetRefName": "refs/heads/main",
+					"mergeStatus": "succeeded",
+					"lastMergeSourceCommit": {"commitId": %q},
+					"lastMergeTargetCommit": {"commitId": %q},
+					"repository": {
+						"id": "repo-guid",
+						"name": "Service",
+						"webUrl": "https://dev.azure.com/AcmeOrg/Payments/_git/Service",
+						"remoteUrl": "https://dev.azure.com/AcmeOrg/Payments/_git/Service",
+						"defaultBranch": "refs/heads/main",
+						"project": {
+							"id": "project-guid",
+							"name": "Payments",
+							"visibility": "private",
+							"lastUpdateTime": "2026-05-21T12:00:00Z"
+						}
+					},
+					"_links": {
+						"web": {"href": "https://dev.azure.com/AcmeOrg/Payments/_git/Service/pullrequest/17"}
+					}
+				}`, mergedAt.Format(time.RFC3339), headSHA, baseSHA)))
+				return
+			}
+			_, _ = w.Write([]byte(fmt.Sprintf(`{
+				"pullRequestId": 17,
+				"status": "active",
+				"title": "Azure DevOps provider PR",
+				"description": "POC body",
+				"creationDate": "2026-05-21T12:00:00Z",
+				"createdBy": {
+					"displayName": "Ada Lovelace",
+					"uniqueName": "ada@example.com"
+				},
+				"sourceRefName": "refs/heads/feature/ado",
+				"targetRefName": "refs/heads/main",
+				"mergeStatus": "conflicts",
+				"lastMergeSourceCommit": {"commitId": %q},
+				"lastMergeTargetCommit": {"commitId": %q},
+				"repository": {
+					"id": "repo-guid",
+					"name": "Service",
+					"webUrl": "https://dev.azure.com/AcmeOrg/Payments/_git/Service",
+					"remoteUrl": "https://dev.azure.com/AcmeOrg/Payments/_git/Service",
+					"defaultBranch": "refs/heads/main",
+					"project": {
+						"id": "project-guid",
+						"name": "Payments",
+						"visibility": "private",
+						"lastUpdateTime": "2026-05-21T12:00:00Z"
+					}
+				},
+				"_links": {
+					"web": {"href": "https://dev.azure.com/AcmeOrg/Payments/_git/Service/pullrequest/17"}
+				}
+			}`, headSHA, baseSHA)))
+		case "/AcmeOrg/Payments/_apis/git/repositories/Service/pullRequests/17/threads":
+			if merged {
+				_, _ = w.Write([]byte(`{
+					"count": 2,
+					"value": [{
+						"id": 55,
+						"comments": [{
+							"id": 1001,
+							"parentCommentId": 0,
+							"commentType": "text",
+							"content": "Looks good from Azure DevOps",
+							"publishedDate": "2026-05-21T12:05:00Z",
+							"author": {"displayName": "Grace Hopper"}
+						}]
+					}, {
+						"id": 56,
+						"comments": [{
+							"id": 1002,
+							"parentCommentId": 0,
+							"commentType": "system",
+							"content": "Merged",
+							"publishedDate": "2026-05-21T12:08:00Z",
+							"author": {"displayName": "Merge Bot"}
+						}]
+					}]
+				}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{
+				"count": 1,
+				"value": [{
+					"id": 55,
+					"comments": [{
+						"id": 1001,
+						"parentCommentId": 0,
+						"commentType": "text",
+						"content": "Looks good from Azure DevOps",
+						"publishedDate": "2026-05-21T12:05:00Z",
+						"author": {"displayName": "Grace Hopper"}
+					}]
+				}]
+			}`))
+		case "/AcmeOrg/Payments/_apis/git/repositories/Service/pullRequests/17/iterations":
+			_, _ = w.Write([]byte(`{"count": 0, "value": []}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer api.Close()
+
+	database := dbtest.Open(t)
+	clones := gitclone.New(t.TempDir(), nil)
+	provider, err := azuredevops.NewClient(
+		platform.DefaultAzureDevOpsHost,
+		azuredevops.WithBaseURLForTesting(api.URL),
+		azuredevops.WithTokenSource(azureDevOpsStaticToken("azure-token")),
+	)
+	require.NoError(err)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+
+	repo := ghclient.RepoRef{
+		Platform:     platform.KindAzureDevOps,
+		PlatformHost: platform.DefaultAzureDevOpsHost,
+		Owner:        "AcmeOrg/Payments",
+		Name:         "Service",
+		RepoPath:     "AcmeOrg/Payments/Service",
+		CloneURL:     remote,
+	}
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry,
+		database,
+		clones,
+		[]ghclient.RepoRef{repo},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{Clones: clones})
+	srv.workspaces = workspace.NewManager(database, t.TempDir())
+	srv.workspaces.SetClones(clones)
+	srv.workspaces.SetTmuxCommand([]string{"sh", "-c", "exit 0"})
+	t.Cleanup(func() { gracefulShutdown(t, srv) })
+
+	syncer.RunOnce(ctx)
+	merged = true
+	syncer.RunOnce(ctx)
+
+	repoRow, err := database.GetRepoByHostOwnerName(ctx, repo.PlatformHost, repo.Owner, repo.Name)
+	require.NoError(err)
+	require.NotNil(repoRow)
+	require.NoError(database.UpdateRepoProviderMetadata(ctx, repoRow.ID, db.RepoProviderMetadata{
+		PlatformRepoID: repoRow.PlatformRepoID,
+		WebURL:         repoRow.WebURL,
+		CloneURL:       remote,
+		DefaultBranch:  repoRow.DefaultBranch,
+	}))
+
+	rawDetail := doJSON(t, srv, http.MethodGet, "/api/v1/pulls/azure_devops/AcmeOrg%2FPayments/Service/17", nil)
+	require.Equal(http.StatusOK, rawDetail.Code, rawDetail.Body.String())
+	var detail mergeRequestDetailResponse
+	require.NoError(json.NewDecoder(rawDetail.Body).Decode(&detail))
+	require.NotNil(detail.MergeRequest)
+	assert.Equal("merged", detail.MergeRequest.State)
+	assert.Equal(mergedAt, detail.MergeRequest.LastActivityAt)
+	require.Len(detail.Events, 2)
+	assert.Equal("issue_comment", detail.Events[0].EventType)
+	assert.Equal("merged", detail.Events[1].EventType)
+	assert.Equal("Merged", detail.Events[1].Summary)
+	assert.Equal("Merged", detail.Events[1].Body)
+	assert.Equal("Merge Bot", detail.Events[1].Author)
+	assert.Equal(1, detail.MergeRequest.CommentCount)
+
+	since := openedAt.Add(-time.Hour).Format(time.RFC3339)
+	rawActivity := doJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+url.QueryEscape(since)+"&types=merged", nil)
+	require.Equal(http.StatusOK, rawActivity.Code, rawActivity.Body.String())
+	var activity activityResponse
+	require.NoError(json.NewDecoder(rawActivity.Body).Decode(&activity))
+	require.Len(activity.Items, 1)
+	assert.Equal("merged", activity.Items[0].ActivityType)
+	assert.Equal("merged", activity.Items[0].ItemState)
+	assert.Equal(17, activity.Items[0].ItemNumber)
+	assert.Equal("Merge Bot", activity.Items[0].Author)
+	assert.Equal("Merged", activity.Items[0].BodyPreview)
+}
+
 func TestAPIAzureDevOpsSyncHandlesSpacesInRepoIdentity(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

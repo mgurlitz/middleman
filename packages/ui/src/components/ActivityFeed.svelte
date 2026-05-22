@@ -53,6 +53,7 @@
     "commit",
     "force_push",
     "iteration",
+    "merged",
   ] as const;
   type EventType = (typeof EVENT_TYPES)[number];
 
@@ -62,6 +63,7 @@
     commit: "Commits",
     force_push: "Force pushes",
     iteration: "Iterations",
+    merged: "Merges",
   };
 
   const EVENT_COLORS: Record<EventType, string> = {
@@ -70,6 +72,7 @@
     commit: "var(--accent-teal)",
     force_push: "var(--accent-red)",
     iteration: "var(--accent-amber)",
+    merged: "var(--accent-purple)",
   };
 
   const hiddenFilterCount = $derived(
@@ -160,6 +163,7 @@
       case "commit": return "Commit";
       case "force_push": return "Force-pushed";
       case "iteration": return "Iteration";
+      case "merged": return "Merged";
       default: return item.activity_type;
     }
   }
@@ -296,6 +300,7 @@
       case "commit": return "evt-commit";
       case "force_push": return "evt-force-push";
       case "iteration": return "evt-iteration";
+      case "merged": return "evt-merged";
       default: return "";
     }
   }
@@ -307,6 +312,7 @@
       : type === "commit" ? "chip--teal"
       : type === "force_push" ? "chip--red"
       : type === "iteration" ? "chip--amber"
+      : type === "merged" ? "chip--purple"
       : "chip--muted";
     return `evt-label ${eventClass(type)} ${toneClass}`;
   }
@@ -791,6 +797,7 @@
   :global(.evt-label.evt-commit) { color: var(--accent-teal); }
   :global(.evt-label.evt-force-push) { color: var(--accent-red); }
   :global(.evt-label.evt-iteration) { color: var(--accent-amber); }
+  :global(.evt-label.evt-merged) { color: var(--accent-purple); }
 
   .col-repo {
     color: var(--text-muted);

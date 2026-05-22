@@ -165,6 +165,7 @@
       case "commit": return "Commit";
       case "force_push": return "Force-pushed";
       case "iteration": return "Iteration";
+      case "merged": return "Merged";
       default: return type;
     }
   }
@@ -176,6 +177,7 @@
       case "commit": return "evt-commit";
       case "force_push": return "evt-force-push";
       case "iteration": return "evt-iteration";
+      case "merged": return "evt-merged";
       default: return "";
     }
   }
@@ -391,6 +393,7 @@
   .event-type.evt-commit { color: var(--accent-teal); }
   .event-type.evt-force-push { color: var(--accent-red); }
   .event-type.evt-iteration { color: var(--accent-amber); }
+  .event-type.evt-merged { color: var(--accent-purple); }
 
   .event-author {
     font-size: var(--font-size-xs);
