@@ -22,6 +22,7 @@ const (
 	capabilityReviewDraftMutation    = "review_draft_mutation"
 	capabilityReviewThreadResolution = "review_thread_resolution"
 	capabilityReadReviewThreads      = "read_review_threads"
+	capabilityLocalClone             = "local_clone"
 )
 
 func capabilityEnabled(
@@ -57,6 +58,8 @@ func capabilityEnabled(
 		return caps.ReviewThreadResolution
 	case capabilityReadReviewThreads:
 		return caps.ReadReviewThreads
+	case capabilityLocalClone:
+		return caps.LocalClone
 	default:
 		return false
 	}

@@ -74,8 +74,7 @@ vi.mock("../context.js", () => ({
       startActivityPolling: vi.fn(),
       stopActivityPolling: vi.fn(),
       getActivitySearch: () => "",
-      getEnabledEvents: () =>
-        new Set(["comment", "review", "commit", "force_push"]),
+      getEnabledEvents: () => new Set(["comment", "review", "commit", "force_push", "iteration", "merged"]),
       getHideClosedMerged: () => false,
       getHideBots: () => false,
       getHideDefaultBranchActivity: () => hideDefaultBranchActivity.value,
@@ -223,6 +222,41 @@ describe("ActivityFeed compact mode", () => {
     expect(
       screen.queryByRole("button", { name: /Collapse all|Expand all/ }),
     ).toBeNull();
+  });
+
+  it("renders iteration activity labels in compact rows", () => {
+    items.value = [
+      activityItem("iteration", {
+        activity_type: "iteration",
+      }),
+    ];
+
+    render(ActivityFeed, {
+      props: {
+        compact: true,
+      },
+    });
+
+    expect(screen.getByText("Iteration")).toBeTruthy();
+  });
+
+  it("renders merged activity labels in compact rows", () => {
+    items.value = [
+      activityItem("merged-activity", {
+        activity_type: "merged",
+        body_preview: "Merged",
+        item_state: "merged",
+      }),
+    ];
+
+    const { container } = render(ActivityFeed, {
+      props: {
+        compact: true,
+      },
+    });
+
+    expect(screen.getByText("Merged")).toBeTruthy();
+    expect(container.querySelector(".evt-label.evt-merged")).not.toBeNull();
   });
 
   it("uses shared semantic chips for compact item kind and state", () => {

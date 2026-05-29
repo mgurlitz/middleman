@@ -111,7 +111,7 @@ func (d *DB) ListActivity(
 			       'pr' AS item_type, p.number AS item_number,
 			       p.title AS item_title,
 			       p.url AS item_url, p.state AS item_state,
-			       p.author, p.created_at,
+			       COALESCE(NULLIF(p.author_display_name, ''), p.author) AS author, p.created_at,
 			       '' AS body_preview,
 			       '' AS branch_name, '' AS commit_sha, '' AS before_sha, '' AS after_sha,
 			       '' AS author_name, '' AS author_email,
@@ -154,7 +154,7 @@ func (d *DB) ListActivity(
 			JOIN middleman_merge_requests p ON e.merge_request_id = p.id
 			JOIN middleman_repos r ON p.repo_id = r.id
 			WHERE e.event_type IN (
-				'issue_comment', 'review', 'commit', 'force_push')
+				'issue_comment', 'review', 'commit', 'force_push', 'iteration', 'merged')
 			UNION ALL
 			SELECT 'comment', 'ise', e.id,
 			       r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,

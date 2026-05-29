@@ -290,9 +290,11 @@ func gitOutput(
 	cmd.Dir = dir
 	cmd.Env = append(
 		gitenv.StripAll(os.Environ()),
-		"GIT_CONFIG_GLOBAL=/dev/null",
-		"GIT_CONFIG_SYSTEM=/dev/null",
+		"GIT_CONFIG_NOSYSTEM=1",
 	)
+	if nullConfig := gitenv.NullConfigPath(); nullConfig != "" {
+		cmd.Env = append(cmd.Env, "GIT_CONFIG_GLOBAL="+nullConfig)
+	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))

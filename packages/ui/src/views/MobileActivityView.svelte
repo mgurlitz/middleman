@@ -22,6 +22,7 @@
   import {
     buildMobileActivityRepoOptions,
   } from "./mobileActivityRepoOptions.js";
+  import { isBotAuthor } from "../utils/bot-authors.js";
 
   const { activity, settings, sync, grouping } = getStores();
 
@@ -41,7 +42,6 @@
     latestTime: string;
   };
 
-  const BOT_SUFFIXES = ["[bot]", "-bot", "bot"];
   const timeRanges: TimeRange[] = ["24h", "7d", "30d", "90d"];
   const itemFilters: { value: ItemFilter; label: string }[] = [
     { value: "all", label: "All" },
@@ -77,11 +77,6 @@
     if (debounceTimer) clearTimeout(debounceTimer);
   });
 
-  function isBot(author: string): boolean {
-    const lower = author.toLowerCase();
-    return BOT_SUFFIXES.some((suffix) => lower.endsWith(suffix));
-  }
-
   const displayItems = $derived.by(() => {
     let result = activity.getActivityItems();
     const filter = activity.getItemFilter();
@@ -99,7 +94,7 @@
     }
 
     if (activity.getHideBots()) {
-      result = result.filter((item) => !isBot(item.author));
+      result = result.filter((item) => !isBotAuthor(item.author));
     }
 
     if (activity.getHideDefaultBranchActivity()) {
@@ -263,6 +258,10 @@
       case "force_push":
       case "default_branch_force_push":
         return "Force-pushed";
+      case "iteration":
+        return "Iteration";
+      case "merged":
+        return "Merged";
       default:
         return type;
     }
@@ -289,6 +288,8 @@
       case "default_branch_commit": return "commit";
       case "force_push": return "force-push";
       case "default_branch_force_push": return "force-push";
+      case "iteration": return "iteration";
+      case "merged": return "merged";
       default: return "opened";
     }
   }
@@ -458,6 +459,8 @@
                   class:event-review={eventTone(event.activity_type) === "review"}
                   class:event-commit={eventTone(event.activity_type) === "commit"}
                   class:event-force-push={eventTone(event.activity_type) === "force-push"}
+                  class:event-iteration={eventTone(event.activity_type) === "iteration"}
+                  class:event-merged={eventTone(event.activity_type) === "merged"}
                   onclick={() => handleEventClick(event)}
                 >
                   <span class="mobile-activity-event__dot" aria-hidden="true"></span>
@@ -789,6 +792,14 @@
 
   .mobile-activity-event.event-force-push .mobile-activity-event__dot {
     background: var(--accent-red);
+  }
+
+  .mobile-activity-event.event-iteration .mobile-activity-event__dot {
+    background: var(--accent-amber);
+  }
+
+  .mobile-activity-event.event-merged .mobile-activity-event__dot {
+    background: var(--accent-purple);
   }
 
   .mobile-activity-event__body {

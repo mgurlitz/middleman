@@ -143,6 +143,20 @@ describe("PullItem kanban status", () => {
     cleanup();
   });
 
+  it("prefers AuthorDisplayName over the raw author id", () => {
+    renderItem(mkPR({
+      Title: "Build service update",
+      Author: "vssgp.Uy0xLTktMTU1MTM3NDI0NS0zMzM0",
+      AuthorDisplayName: "Acme Build Service",
+      LastActivityAt: "2026-05-01T12:00:00Z",
+      repo_owner: "acme",
+      repo_name: "widgets",
+    }));
+
+    expect(screen.getByText(/Acme Build Service/)).toBeTruthy();
+    expect(screen.queryByText(/vssgp\.Uy0xLTktMTU1MTM3NDI0NS0zMzM0/)).toBeNull();
+  });
+
   it("shows the kanban status for open PRs", () => {
     renderItem(mkPR({
       Title: "Cache widget details",

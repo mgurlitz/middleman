@@ -14,6 +14,8 @@ export const DEFAULT_EVENT_TYPES = [
   "review",
   "commit",
   "force_push",
+  "iteration",
+  "merged",
 ] as const;
 
 export const DEFAULT_BRANCH_ACTIVITY_TYPES = [

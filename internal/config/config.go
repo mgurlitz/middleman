@@ -631,6 +631,11 @@ port = 8091
 # host = "gitlab.com"
 # token_env = "MIDDLEMAN_GITLAB_TOKEN"
 
+# Azure DevOps POC uses Azure CLI auth on demand instead of a stored token.
+# [[platforms]]
+# type = "azure_devops"
+# host = "dev.azure.com"
+
 # Add repositories to monitor (or add them in the Settings UI).
 # [[repos]]
 # owner = "your-org"

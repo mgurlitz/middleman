@@ -19,8 +19,11 @@
 package gitenv
 
 import (
+	"os"
+	"runtime"
 	"slices"
 	"strings"
+	"sync"
 )
 
 // StripInherited returns env with every GIT_* variable that could
@@ -55,6 +58,30 @@ func StripAll(env []string) []string {
 		key, _, _ := strings.Cut(e, "=")
 		return strings.HasPrefix(key, "GIT_") || key == "SSH_ASKPASS"
 	})
+}
+
+var (
+	nullConfigPathOnce sync.Once
+	nullConfigPath     string
+)
+
+// NullConfigPath returns a real empty config file path suitable for
+// GIT_CONFIG_GLOBAL. On Windows, Git for Windows can choke on the magic
+// device name NUL when it is passed through that environment variable, so
+// middleman creates a throwaway empty file instead.
+func NullConfigPath() string {
+	if runtime.GOOS != "windows" {
+		return os.DevNull
+	}
+	nullConfigPathOnce.Do(func() {
+		file, err := os.CreateTemp("", "middleman-empty-gitconfig-")
+		if err != nil {
+			return
+		}
+		nullConfigPath = file.Name()
+		_ = file.Close()
+	})
+	return nullConfigPath
 }
 
 func cloneEnv(env []string) []string {

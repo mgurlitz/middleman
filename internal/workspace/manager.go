@@ -286,10 +286,7 @@ func (m *Manager) CreateIssue(
 
 	workspaceBranch := gitHeadRef
 	if m.clones != nil {
-		remoteURL := fmt.Sprintf(
-			"https://%s/%s/%s.git",
-			platformHost, owner, name,
-		)
+		remoteURL := repoCloneRemoteURL(repo)
 		if err := m.clones.EnsureClone(
 			ctx, platformHost, owner, name, remoteURL,
 		); err != nil {
@@ -362,6 +359,19 @@ func newWorkspaceID() (string, error) {
 	return hex.EncodeToString(idBytes), nil
 }
 
+func repoCloneRemoteURL(repo *db.Repo) string {
+	if repo != nil && strings.TrimSpace(repo.CloneURL) != "" {
+		return strings.TrimSpace(repo.CloneURL)
+	}
+	if repo != nil {
+		return fmt.Sprintf(
+			"https://%s/%s/%s.git",
+			repo.PlatformHost, repo.Owner, repo.Name,
+		)
+	}
+	return ""
+}
+
 func workspaceHeadRepo(platformHost, owner, name, cloneURL string) *string {
 	if cloneURL == "" {
 		return nil
@@ -401,14 +411,27 @@ func (m *Manager) Setup(
 		)
 	}
 
-	remoteURL := fmt.Sprintf(
-		"https://%s/%s/%s.git",
-		ws.PlatformHost, ws.RepoOwner, ws.RepoName,
+	repo, err := m.db.GetRepoByHostOwnerName(
+		ctx, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 	)
+	if err != nil {
+		return m.failSetup(
+			ctx,
+			ws.ID, workspaceSetupStageClone,
+			fmt.Errorf("look up repo: %w", err),
+		)
+	}
+	if repo == nil {
+		return m.failSetup(
+			ctx,
+			ws.ID, workspaceSetupStageClone,
+			fmt.Errorf("repository not tracked"),
+		)
+	}
 
 	if err := m.clones.EnsureClone(
 		ctx, ws.PlatformHost, ws.RepoOwner,
-		ws.RepoName, remoteURL,
+		ws.RepoName, repoCloneRemoteURL(repo),
 	); err != nil {
 		return m.failSetup(
 			ctx,
@@ -2173,9 +2196,11 @@ func workspaceGitCommand(
 	}
 	cmd.Env = append(
 		gitenv.StripAll(os.Environ()),
-		"GIT_CONFIG_GLOBAL="+os.DevNull,
-		"GIT_CONFIG_SYSTEM="+os.DevNull,
+		"GIT_CONFIG_NOSYSTEM=1",
 	)
+	if nullConfig := gitenv.NullConfigPath(); nullConfig != "" {
+		cmd.Env = append(cmd.Env, "GIT_CONFIG_GLOBAL="+nullConfig)
+	}
 	return cmd
 }
 

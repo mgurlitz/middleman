@@ -81,6 +81,29 @@ func TestListActivity(t *testing.T) {
 		assert.Equal("alice", items[6].RepoOwner)
 	})
 
+	t.Run("new pr activity prefers author display name", func(t *testing.T) {
+		assert := Assert.New(t)
+		d := openTestDB(t)
+		ctx := t.Context()
+		base := baseTime()
+		repoID := insertTestRepo(t, d, "alice", "alpha")
+		insertTestMRWithOptions(t, d, testMR(
+			repoID,
+			1,
+			withMRTitle("Build service update"),
+			withMRActivity(base),
+			func(mr *MergeRequest) {
+				mr.Author = "svc-principal-1234"
+				mr.AuthorDisplayName = "Acme Build Service"
+			},
+		))
+
+		items, err := d.ListActivity(ctx, ListActivityOpts{Types: []string{"new_pr"}, Limit: 50})
+		require.NoError(t, err)
+		require.Len(t, items, 1)
+		assert.Equal("Acme Build Service", items[0].Author)
+	})
+
 	t.Run("repo filter", func(t *testing.T) {
 		assert := Assert.New(t)
 		items, err := d.ListActivity(ctx, ListActivityOpts{
@@ -134,6 +157,33 @@ func TestListActivity(t *testing.T) {
 		for _, it := range items {
 			assert.Contains([]string{"new_pr", "new_issue"}, it.ActivityType)
 		}
+	})
+
+	t.Run("iteration events appear in the activity feed", func(t *testing.T) {
+		assert := Assert.New(t)
+		d := openTestDB(t)
+		ctx := t.Context()
+		base := baseTime()
+		repoID := insertTestRepo(t, d, "alice", "alpha")
+		prID := insertTestMR(t, d, repoID, 1, "Rewrite branch", base)
+
+		err := d.UpsertMREvents(ctx, []MREvent{{
+			MergeRequestID: prID,
+			EventType:      "iteration",
+			Author:         "alice",
+			Summary:        "Iteration 3",
+			Body:           "Source updated: abc1234 -> def5678",
+			CreatedAt:      base.Add(5 * time.Minute),
+			DedupeKey:      "iteration-3",
+		}})
+		require.NoError(t, err)
+
+		items, err := d.ListActivity(ctx, ListActivityOpts{Limit: 50})
+		require.NoError(t, err)
+		require.NotEmpty(t, items)
+		assert.Equal("iteration", items[0].ActivityType)
+		assert.Equal("alice", items[0].Author)
+		assert.Equal("Rewrite branch", items[0].ItemTitle)
 	})
 
 	t.Run("force push events appear in the activity feed", func(t *testing.T) {
