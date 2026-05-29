@@ -918,11 +918,10 @@
             {@render eventBody(event, false, entry.reviewThread, hasReplyOnlyAction ? entry : undefined)}
             {#if entry.replies.length > 0 || (canReplyToThread(entry) && !hasReplyOnlyAction)}
               <div class="thread-controls">
-                {@const providerUrl = commentLink(event)}
-                {#if providerUrl}
+                {#if commentLink(event)}
                   <a
                     class="event-action-link"
-                    href={providerUrl}
+                    href={commentLink(event) ?? undefined}
                     target="_blank"
                     rel="noopener noreferrer"
                     title="Open in provider"
