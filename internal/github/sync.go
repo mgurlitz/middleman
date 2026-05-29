@@ -1620,6 +1620,14 @@ func repoRateBucketKey(repo RepoRef) string {
 	return rateBucketKeyFor(repoPlatform(repo), repoHost(repo))
 }
 
+func repoSupportsLocalClone(repo RepoRef) bool {
+	return platform.SupportsLocalClone(repoPlatform(repo))
+}
+
+func repoSupportsConditionalCommentRefresh(repo RepoRef) bool {
+	return repoPlatform(repo) == platform.KindGitHub
+}
+
 func watchedMRRateBucketKey(mr WatchedMR) string {
 	return rateBucketKeyFor(watchedMRPlatform(mr), watchedMRHost(mr))
 }
@@ -2717,15 +2725,15 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		}
 	}
 
+	s.syncRepoLabelCatalog(ctx, repo, repoID)
+
+	syncErr := s.indexSyncRepo(ctx, repo, repoID, cloneFetchOK)
+
 	if client, ok := s.optionalGitHubClientFor(repo); ok {
 		s.syncRepoOverview(ctx, client, repo, repoID, cloneFetchOK)
 	} else {
 		s.syncProviderRepoOverview(ctx, repo, repoID, cloneFetchOK)
 	}
-
-	s.syncRepoLabelCatalog(ctx, repo, repoID)
-
-	syncErr := s.indexSyncRepo(ctx, repo, repoID, cloneFetchOK)
 
 	syncErrStr := ""
 	if syncErr != nil {
@@ -3449,6 +3457,15 @@ func (s *Syncer) indexSyncRepo(
 		if err != nil {
 			return fmt.Errorf("resolve merge request reader for %s/%s: %w", repo.Owner, repo.Name, err)
 		}
+		localOpenMRCount := 0
+		if count, countErr := s.db.CountOpenMergeRequestsForRepo(ctx, repoID); countErr != nil {
+			slog.Warn("count open merge requests before lazy clone failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"err", countErr,
+			)
+		} else {
+			localOpenMRCount = count
+		}
 		openMRs, err := mrReader.ListOpenMergeRequests(ctx, platformRef)
 		if err != nil {
 			// 304 Not Modified means the open-PR list is byte-identical
@@ -3464,6 +3481,17 @@ func (s *Syncer) indexSyncRepo(
 			}
 		}
 
+		needClone := len(openMRs) > 0 || localOpenMRCount > 0
+		if needClone && !cloneFetchOK && s.clones != nil && repoSupportsLocalClone(repo) {
+			if err := s.clones.EnsureClone(ctx, repoHost(repo), repo.Owner, repo.Name, cloneRemoteURL(repo)); err != nil {
+				slog.Warn("bare clone fetch failed",
+					"repo", repo.Owner+"/"+repo.Name,
+					"err", err,
+				)
+			} else {
+				cloneFetchOK = true
+			}
+		}
 		if prListUnchanged {
 			// 304 — nothing to do. The detail drain handles CI
 			// updates for PRs with pending checks via priority scoring.
@@ -3613,10 +3641,12 @@ func (s *Syncer) indexSyncRepo(
 		s.clearRepoFailed(repo)
 	}
 
-	if caps.ReadMergeRequests && prListUnchanged && failedScope&failMR == 0 {
+	if repoSupportsConditionalCommentRefresh(repo) &&
+		caps.ReadMergeRequests && prListUnchanged && failedScope&failMR == 0 {
 		s.refreshRepoPRComments(ctx, repo)
 	}
-	if caps.ReadIssues && issueListUnchanged && failedScope&failIssues == 0 {
+	if repoSupportsConditionalCommentRefresh(repo) &&
+		caps.ReadIssues && issueListUnchanged && failedScope&failIssues == 0 {
 		s.refreshRepoIssueComments(ctx, repo)
 	}
 
@@ -3646,6 +3676,20 @@ func (s *Syncer) syncMergeRequestsFromList(
 				"err", err,
 			)
 			hadItemFailure = true
+		} else if err := s.updateProviderMRDiffSHAs(
+			ctx,
+			repo,
+			repoID,
+			mr.Number,
+			mr.HeadSHA,
+			mr.BaseSHA,
+			cloneFetchOK,
+		); err != nil {
+			slog.Warn("update provider MR diff SHAs failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", mr.Number,
+				"err", err,
+			)
 		}
 		progress.record(i + 1)
 	}
@@ -3798,7 +3842,8 @@ func (s *Syncer) indexUpsertMergeRequest(
 		)
 	}
 
-	if existing != nil &&
+	if repoSupportsConditionalCommentRefresh(repo) &&
+		existing != nil &&
 		existing.DetailFetchedAt != nil &&
 		existing.UpdatedAt.Equal(normalized.UpdatedAt) {
 		s.queuePRCommentSync(repo, existing.Number)
@@ -3883,7 +3928,8 @@ func (s *Syncer) indexUpsertMR(
 		)
 	}
 
-	if existing != nil &&
+	if repoSupportsConditionalCommentRefresh(repo) &&
+		existing != nil &&
 		existing.DetailFetchedAt != nil &&
 		existing.UpdatedAt.Equal(normalized.UpdatedAt) {
 		s.queuePRCommentSync(repo, existing.Number)
@@ -4025,6 +4071,9 @@ func (s *Syncer) drainPendingCommentSyncs(
 		if ctx.Err() != nil {
 			return
 		}
+		if !repoSupportsConditionalCommentRefresh(item.repo) {
+			continue
+		}
 		bucket := repoRateBucketKey(item.repo)
 		if !eligibleHosts[bucket] {
 			continue
@@ -4066,6 +4115,9 @@ func (s *Syncer) drainPendingCommentSyncs(
 	for _, item := range issues {
 		if ctx.Err() != nil {
 			return
+		}
+		if !repoSupportsConditionalCommentRefresh(item.repo) {
+			continue
 		}
 		bucket := repoRateBucketKey(item.repo)
 		if !eligibleHosts[bucket] {
@@ -4675,7 +4727,7 @@ func (s *Syncer) fetchMRDetail(
 	if _, ok := mrReader.(interface {
 		GetGitHubPullRequest(context.Context, platform.RepoRef, int) (*gh.PullRequest, platform.MergeRequest, error)
 	}); !ok {
-		return s.fetchProviderMRDetail(ctx, mrReader, repo, repoID, number)
+		return s.fetchProviderMRDetail(ctx, mrReader, repo, repoID, number, cloneFetchOK)
 	}
 
 	client, err := s.clientFor(repo)
@@ -4936,6 +4988,7 @@ func (s *Syncer) fetchProviderMRDetail(
 	repo RepoRef,
 	repoID int64,
 	number int,
+	cloneFetchOK bool,
 ) (int, error) {
 	calls := 0
 	mr, err := reader.GetMergeRequest(ctx, platformRepoRef(repo), number)
@@ -4954,6 +5007,10 @@ func (s *Syncer) fetchProviderMRDetail(
 		)
 	}
 	preserveMergeableStateIfOmitted(normalized, existing)
+	lastActivityBase := normalized.LastActivityAt
+	if providerDetailRefreshesMRActivity(reader) {
+		lastActivityBase = preserveLastActivityDuringProviderMRDetailSync(normalized, existing)
+	}
 
 	mrID, err := s.db.UpsertMergeRequest(ctx, normalized)
 	if err != nil {
@@ -4969,9 +5026,24 @@ func (s *Syncer) fetchProviderMRDetail(
 			"ensure kanban state for MR #%d: %w", number, err,
 		)
 	}
+	if err := s.updateProviderMRDiffSHAs(
+		ctx,
+		repo,
+		repoID,
+		number,
+		normalized.PlatformHeadSHA,
+		normalized.PlatformBaseSHA,
+		cloneFetchOK,
+	); err != nil {
+		slog.Warn("update provider MR diff SHAs failed",
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", number,
+			"err", err,
+		)
+	}
 
 	detailCalls, pending, err := s.syncProviderMRDetailExtras(
-		ctx, reader, repo, repoID, mrID, number, normalized.PlatformHeadSHA,
+		ctx, reader, repo, repoID, mrID, number, normalized.PlatformHeadSHA, lastActivityBase,
 	)
 	calls += detailCalls
 	if err != nil {
@@ -5005,6 +5077,7 @@ func (s *Syncer) syncProviderMRDetailExtras(
 	mrID int64,
 	number int,
 	headSHA string,
+	lastActivityBase time.Time,
 ) (int, bool, error) {
 	calls := 0
 	events, err := reader.ListMergeRequestEvents(ctx, platformRepoRef(repo), number)
@@ -5027,6 +5100,9 @@ func (s *Syncer) syncProviderMRDetailExtras(
 		}
 		if err := s.db.UpsertMREvents(ctx, dbEvents); err != nil {
 			return calls, false, fmt.Errorf("upsert events for MR #%d: %w", number, err)
+		}
+		if err := s.refreshProviderMRDerivedFieldsFromEvents(ctx, repoID, number, lastActivityBase, events); err != nil {
+			return calls, false, fmt.Errorf("update derived fields for MR #%d: %w", number, err)
 		}
 	}
 
@@ -5348,6 +5424,64 @@ func (s *Syncer) fetchProviderIssueDetail(
 	}
 
 	return calls, nil
+}
+
+func (s *Syncer) updateProviderMRDiffSHAs(
+	ctx context.Context,
+	repo RepoRef,
+	repoID int64,
+	number int,
+	headSHA string,
+	baseSHA string,
+	cloneFetchOK bool,
+) error {
+	if !cloneFetchOK || s.clones == nil || !repoSupportsLocalClone(repo) {
+		return nil
+	}
+	if strings.TrimSpace(headSHA) == "" || strings.TrimSpace(baseSHA) == "" {
+		return nil
+	}
+	mergeBase, err := s.clones.MergeBase(
+		ctx, repoHost(repo), repo.Owner, repo.Name, baseSHA, headSHA,
+	)
+	if err != nil {
+		return fmt.Errorf("merge-base for MR #%d: %w", number, err)
+	}
+	if err := s.db.UpdateDiffSHAs(ctx, repoID, number, headSHA, baseSHA, mergeBase); err != nil {
+		return fmt.Errorf("update diff SHAs for MR #%d: %w", number, err)
+	}
+	return nil
+}
+
+func (s *Syncer) refreshProviderMRDerivedFieldsFromEvents(
+	ctx context.Context,
+	repoID int64,
+	number int,
+	lastActivityBase time.Time,
+	events []platform.MergeRequestEvent,
+) error {
+	current, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
+	if err != nil {
+		return fmt.Errorf("load merge request: %w", err)
+	}
+	if current == nil {
+		return fmt.Errorf("merge request not found")
+	}
+	commentCount := 0
+	lastActivityAt := lastActivityBase
+	for _, event := range events {
+		if event.EventType == "issue_comment" {
+			commentCount++
+		}
+		if event.CreatedAt.After(lastActivityAt) {
+			lastActivityAt = event.CreatedAt
+		}
+	}
+	return s.db.UpdateMRDerivedFields(ctx, repoID, number, db.MRDerivedFields{
+		ReviewDecision: current.ReviewDecision,
+		CommentCount:   commentCount,
+		LastActivityAt: lastActivityAt,
+	})
 }
 
 func (s *Syncer) updateMRDetailFetchedByRepoID(
@@ -6038,7 +6172,7 @@ func (s *Syncer) syncOpenPlatformIssue(
 	}
 
 	if !needsTimeline {
-		if existing != nil && existing.DetailFetchedAt != nil {
+		if repoSupportsConditionalCommentRefresh(repo) && existing != nil && existing.DetailFetchedAt != nil {
 			s.queueIssueCommentSync(repo, existing.Number)
 		}
 		return nil
@@ -6186,6 +6320,9 @@ func (s *Syncer) refreshRepoPRComments(
 	ctx context.Context,
 	repo RepoRef,
 ) {
+	if !repoSupportsConditionalCommentRefresh(repo) {
+		return
+	}
 	prs, err := s.db.ListMergeRequests(ctx, db.ListMergeRequestsOpts{
 		PlatformHost: repoHost(repo),
 		RepoOwner:    repo.Owner,
@@ -6221,6 +6358,9 @@ func (s *Syncer) refreshRepoIssueComments(
 	ctx context.Context,
 	repo RepoRef,
 ) {
+	if !repoSupportsConditionalCommentRefresh(repo) {
+		return
+	}
 	issues, err := s.db.ListIssues(ctx, db.ListIssuesOpts{
 		PlatformHost: repoHost(repo),
 		RepoOwner:    repo.Owner,
@@ -6447,7 +6587,7 @@ func (s *Syncer) drainDetailQueue(
 
 		// Compute diff SHAs if clone available.
 		cloneFetchOK := false
-		if s.clones != nil {
+		if s.clones != nil && repoSupportsLocalClone(repo) {
 			if cloneErr := s.clones.EnsureClone(
 				ctx, host, qi.RepoOwner, qi.RepoName,
 				cloneRemoteURL(repo),
@@ -7010,6 +7150,11 @@ func (s *Syncer) syncMRForRepo(
 		}
 	}
 
+	lastActivityBase := normalized.LastActivityAt
+	if ghPR == nil && providerDetailRefreshesMRActivity(mrReader) {
+		lastActivityBase = preserveLastActivityDuringProviderMRDetailSync(normalized, existing)
+	}
+
 	mrID, err := s.db.UpsertMergeRequest(ctx, normalized)
 	if err != nil {
 		return fmt.Errorf("upsert MR #%d: %w", number, err)
@@ -7066,9 +7211,38 @@ func (s *Syncer) syncMRForRepo(
 			_ = s.updateMRDetailFetchedByRepoID(ctx, repoID, number, pending)
 		}
 	} else {
+		cloneFetchOK := false
+		if s.clones != nil && repoSupportsLocalClone(repo) {
+			if cloneErr := s.clones.EnsureClone(
+				ctx, repoHost(repo), repo.Owner, repo.Name, cloneRemoteURL(repo),
+			); cloneErr != nil {
+				slog.Warn("ensure clone failed during provider SyncMR",
+					"repo", repo.Owner+"/"+repo.Name,
+					"number", number,
+					"err", cloneErr,
+				)
+			} else {
+				cloneFetchOK = true
+			}
+		}
+		if err := s.updateProviderMRDiffSHAs(
+			ctx,
+			repo,
+			repoID,
+			number,
+			normalized.PlatformHeadSHA,
+			normalized.PlatformBaseSHA,
+			cloneFetchOK,
+		); err != nil {
+			slog.Warn("update provider MR diff SHAs failed during SyncMR",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number,
+				"err", err,
+			)
+		}
 		pending := false
 		_, pending, err = s.syncProviderMRDetailExtras(
-			ctx, mrReader, repo, repoID, mrID, number, normalized.PlatformHeadSHA,
+			ctx, mrReader, repo, repoID, mrID, number, normalized.PlatformHeadSHA, lastActivityBase,
 		)
 		if err != nil {
 			return err
@@ -7095,6 +7269,32 @@ func (s *Syncer) syncMRForRepo(
 		return diffErr
 	}
 	return nil
+}
+
+func providerDetailRefreshesMRActivity(reader platform.MergeRequestReader) bool {
+	provider, ok := reader.(interface{ Capabilities() platform.Capabilities })
+	if !ok {
+		return false
+	}
+	return provider.Capabilities().ReadComments
+}
+
+// preserveLastActivityDuringProviderMRDetailSync keeps the currently visible
+// activity timestamp stable while provider detail sync is in flight. The
+// returned base timestamp is the provider's own MR activity so the later event
+// refresh can still move LastActivityAt backward when comments were deleted.
+func preserveLastActivityDuringProviderMRDetailSync(
+	normalized *db.MergeRequest,
+	existing *db.MergeRequest,
+) time.Time {
+	if normalized == nil {
+		return time.Time{}
+	}
+	base := normalized.LastActivityAt
+	if existing != nil && existing.LastActivityAt.After(normalized.LastActivityAt) {
+		normalized.LastActivityAt = existing.LastActivityAt
+	}
+	return base
 }
 
 func preserveMergeableStateIfOmitted(
@@ -7172,7 +7372,7 @@ func (s *Syncer) syncMRDiff(
 	ctx context.Context, repo RepoRef, repoID int64, number int,
 	ghPR *gh.PullRequest, normalized *db.MergeRequest,
 ) error {
-	if s.clones == nil {
+	if s.clones == nil || !repoSupportsLocalClone(repo) {
 		return nil
 	}
 	host := repoHost(repo)
@@ -7484,12 +7684,40 @@ func (s *Syncer) fetchAndUpdateClosedMergeRequest(
 		return fmt.Errorf("get closed MR #%d: %w", number, err)
 	}
 	normalized := platform.DBMergeRequest(repoID, mr)
+	existing, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
+	if err != nil {
+		return fmt.Errorf("get existing closed MR #%d: %w", number, err)
+	}
+	lastActivityBase := normalized.LastActivityAt
+	if providerDetailRefreshesMRActivity(reader) {
+		lastActivityBase = preserveLastActivityDuringProviderMRDetailSync(normalized, existing)
+	}
 	mrID, err := s.db.UpsertMergeRequest(ctx, normalized)
 	if err != nil {
 		return fmt.Errorf("upsert closed MR #%d: %w", number, err)
 	}
 	if err := s.replaceMergeRequestLabels(ctx, repoID, mrID, normalized.Labels); err != nil {
 		return fmt.Errorf("persist labels for closed MR #%d: %w", number, err)
+	}
+	if err := s.updateProviderMRDiffSHAs(
+		ctx,
+		repo,
+		repoID,
+		number,
+		normalized.PlatformHeadSHA,
+		normalized.PlatformBaseSHA,
+		cloneFetchOK,
+	); err != nil {
+		slog.Warn("update provider MR diff SHAs for closed MR failed",
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", number,
+			"err", err,
+		)
+	}
+	if _, _, err := s.syncProviderMRDetailExtras(
+		ctx, reader, repo, repoID, mrID, number, "", lastActivityBase,
+	); err != nil {
+		return err
 	}
 	return nil
 }

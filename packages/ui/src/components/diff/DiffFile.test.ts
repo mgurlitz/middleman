@@ -760,7 +760,7 @@ describe("DiffFile", () => {
       provider: "github",
       owner,
       name: "n",
-      repoPath: "o/n",
+      repoPath: `${owner}/n`,
       number: 1,
       reviewEnabled: false,
       diffHeadSHA: "diff-head",
@@ -773,7 +773,7 @@ describe("DiffFile", () => {
       provider: "github",
       owner,
       name: "n",
-      repoPath: "o/n",
+      repoPath: `${owner}/n`,
       number: 1,
       reviewEnabled: true,
       diffHeadSHA: "new-diff-head",
@@ -786,7 +786,7 @@ describe("DiffFile", () => {
       provider: "github",
       owner,
       name: "n",
-      repoPath: "o/n",
+      repoPath: `${owner}/n`,
       number: 1,
       reviewEnabled: true,
       diffHeadSHA: "another-diff-head",
@@ -1096,5 +1096,25 @@ describe("DiffFile", () => {
     renderDiffFile(file);
 
     await expectPierreDiffText(/@@ -17,3 \+17,3 @@ usefulContext/);
+  });
+
+  it("renders Azure DevOps file links in the header", () => {
+    render(DiffFile, {
+      props: {
+        file: makeFile({ path: "src/foo.ts" }),
+        provider: "azure_devops",
+        platformHost: "dev.azure.com",
+        owner: "AcmeOrg/Payments",
+        name: "Service",
+        repoPath: "AcmeOrg/Payments/Service",
+        number: 17,
+      },
+      context: new Map([[STORES_KEY, { diff: createDiffStore() }]]),
+    });
+
+    const link = screen.getByTitle("Open in provider");
+    expect(link.getAttribute("href")).toBe(
+      "https://dev.azure.com/AcmeOrg/Payments/_git/Service/pullrequest/17?_a=files&path=%2Fsrc%2Ffoo.ts",
+    );
   });
 });

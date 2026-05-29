@@ -1,6 +1,8 @@
 package gitclone
 
 import (
+	"context"
+	"encoding/base64"
 	"path/filepath"
 	"testing"
 
@@ -20,6 +22,12 @@ func TestValidateRemoteURLHostAcceptsMatchingHTTPSHost(t *testing.T) {
 	err := validateRemoteURLHost("github.com", "https://github.com/acme/widget.git")
 
 	require.NoError(t, err)
+}
+
+type staticTokenSource string
+
+func (s staticTokenSource) Token(_ context.Context) (string, error) {
+	return string(s), nil
 }
 
 func TestValidateRemoteURLIdentityAcceptsSCPStyleRemoteWithoutUser(t *testing.T) {
@@ -78,6 +86,46 @@ func TestValidateRemoteURLHostAcceptsWindowsLocalPath(t *testing.T) {
 	err := validateRemoteURLHost("github.com", `C:\tmp\acme\widget.git`)
 
 	require.NoError(t, err)
+}
+
+func TestValidateRemoteURLIdentityAcceptsAzureDevOpsRepoPath(t *testing.T) {
+	err := validateRemoteURLIdentity(
+		"dev.azure.com", "AcmeOrg/Payments", "Service",
+		"https://dev.azure.com/AcmeOrg/Payments/_git/Service",
+	)
+
+	require.NoError(t, err)
+}
+
+func TestAuthHeaderUsesAzureBearerTokenSource(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr := New(t.TempDir(), nil)
+	mgr.SetAzureBearerTokenSource("dev.azure.com", staticTokenSource("azure-token"))
+
+	header, err := mgr.authHeader(t.Context(), "dev.azure.com")
+	require.NoError(err)
+	assert.Equal("Authorization: Bearer azure-token", header)
+}
+
+func TestAuthHeaderUsesBasicTokenForDefaultHosts(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr := New(t.TempDir(), map[string]string{"github.com": "gh-token"})
+
+	header, err := mgr.authHeader(context.Background(), "github.com")
+	require.NoError(err)
+	expected := "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte("x-access-token:gh-token"))
+	assert.Equal(expected, header)
+}
+
+func TestGitCommandNeedsAuthOnlyForNetworkedCommands(t *testing.T) {
+	assert.True(t, gitCommandNeedsAuth([]string{"clone", "--bare", "https://example/repo.git"}))
+	assert.True(t, gitCommandNeedsAuth([]string{"fetch", "--prune", "origin"}))
+	assert.True(t, gitCommandNeedsAuth([]string{"remote", "set-head", "origin", "-a"}))
+	assert.False(t, gitCommandNeedsAuth([]string{"diff", "--raw"}))
+	assert.False(t, gitCommandNeedsAuth([]string{"rev-parse", "HEAD"}))
+	assert.False(t, gitCommandNeedsAuth([]string{"merge-base", "a", "b"}))
 }
 
 func TestClonePathIncludesHost(t *testing.T) {

@@ -39,6 +39,7 @@
   const repoSlug = $derived(
     `${pr.repo_owner ?? ""}/${pr.repo_name ?? ""}`,
   );
+  const displayAuthor = $derived(pr.AuthorDisplayName || pr.Author);
 
   function handleStarClick(e: MouseEvent): void {
     e.stopPropagation();
@@ -181,7 +182,7 @@
   {/if}
   <div class="meta-row">
     <span class="meta-left">
-      #{pr.Number} · {pr.Author}
+      #{pr.Number} · {displayAuthor}
     </span>
     <span class="meta-right">
       {#if showImport}

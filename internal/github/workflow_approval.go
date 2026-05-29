@@ -1,7 +1,7 @@
 package github
 
 import (
-	"regexp"
+	"net/url"
 	"strings"
 
 	gh "github.com/google/go-github/v84/github"
@@ -16,9 +16,10 @@ type WorkflowApprovalState struct {
 }
 
 // PRSource identifies a pull request's head for matching workflow runs.
-// HeadSHA is required. HeadRepoFullName ("owner/repo") and HeadRef (branch
-// name) are required to disambiguate fork-triggered runs whose pull_requests
-// array is empty; without them the filter fails closed.
+// HeadSHA is required. HeadRepoFullName (the canonical repo path, such as
+// "owner/repo") and HeadRef (branch name) are required to disambiguate
+// fork-triggered runs whose pull_requests array is empty; without them the
+// filter fails closed.
 type PRSource struct {
 	Number           int
 	HeadSHA          string
@@ -86,20 +87,34 @@ func WorkflowApprovalStateFromRuns(runs []*gh.WorkflowRun) WorkflowApprovalState
 	return state
 }
 
-var cloneURLPattern = regexp.MustCompile(`[/:]([\w.-]+)/([\w.-]+?)(?:\.git)?/?$`)
-
-// ParseHeadRepoFullName extracts "owner/repo" from a GitHub clone URL.
+// ParseHeadRepoFullName extracts the canonical repo path from a clone URL.
 // Accepts both HTTPS (https://host/owner/repo[.git]) and SSH
-// (git@host:owner/repo[.git]) forms. Returns empty string if the URL does
-// not match a recognized form.
+// (git@host:owner/repo[.git]) forms, and normalizes Azure DevOps
+// /_git/ paths back to owner/project/repo.
 func ParseHeadRepoFullName(cloneURL string) string {
 	cloneURL = strings.TrimSpace(cloneURL)
 	if cloneURL == "" {
 		return ""
 	}
-	m := cloneURLPattern.FindStringSubmatch(cloneURL)
-	if len(m) != 3 {
+	var repoPath string
+	if strings.Contains(cloneURL, "://") {
+		parsed, err := url.Parse(cloneURL)
+		if err != nil || parsed.Host == "" {
+			return ""
+		}
+		repoPath = parsed.Path
+	} else {
+		prefix, path, ok := strings.Cut(cloneURL, ":")
+		if !ok || strings.Contains(prefix, "/") {
+			return ""
+		}
+		repoPath = path
+	}
+	repoPath = strings.Trim(strings.TrimSpace(repoPath), "/")
+	repoPath = strings.TrimSuffix(repoPath, ".git")
+	repoPath = strings.ReplaceAll(repoPath, "/_git/", "/")
+	if repoPath == "" || !strings.Contains(repoPath, "/") || strings.Contains(repoPath, "\\") {
 		return ""
 	}
-	return m[1] + "/" + m[2]
+	return repoPath
 }

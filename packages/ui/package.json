@@ -12,6 +12,7 @@
     "./api/schema": { "default": "./src/api/generated/schema.ts" },
     "./api/problems": { "default": "./src/api/problems.ts" },
     "./api/provider-capabilities": { "default": "./src/api/provider-capabilities.ts" },
+    "./api/provider-links": { "default": "./src/api/provider-links.ts" },
     "./api/provider-routes": { "default": "./src/api/provider-routes.ts" },
     "./utils/time": { "default": "./src/utils/time.ts" },
     "./utils/markdown": { "default": "./src/utils/markdown.ts" },

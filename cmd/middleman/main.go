@@ -25,6 +25,7 @@ import (
 	"go.kenn.io/middleman/internal/gitclone"
 	ghclient "go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
+	azuredevopsclient "go.kenn.io/middleman/internal/platform/azuredevops"
 	"go.kenn.io/middleman/internal/profiler"
 	"go.kenn.io/middleman/internal/ptyowner"
 	"go.kenn.io/middleman/internal/runtimelock"
@@ -393,6 +394,9 @@ func run(opts serve.Options) error {
 	cloneMgr := gitclone.New(
 		filepath.Join(cfg.DataDir, "clones"), startup.cloneTokens,
 	)
+	if err := configureCloneAuth(cloneMgr, providerTokens); err != nil {
+		return err
+	}
 
 	syncer := ghclient.NewSyncerWithRegistry(
 		startup.registry, database, cloneMgr, repos,
@@ -572,6 +576,41 @@ func writeRuntimeMetadata(h *runtimelock.Handle, ln net.Listener) error {
 	})
 }
 
+func configureCloneAuth(
+	cloneMgr *gitclone.Manager,
+	providerTokens map[string]string,
+) error {
+	if cloneMgr == nil {
+		return nil
+	}
+	azureHosts := make(map[string]struct{})
+	for key := range providerTokens {
+		platformName, host := splitProviderHostKey(key)
+		if platformName == string(platform.KindAzureDevOps) {
+			azureHosts[host] = struct{}{}
+		}
+	}
+	for key, token := range providerTokens {
+		platformName, host := splitProviderHostKey(key)
+		if platformName == string(platform.KindAzureDevOps) {
+			continue
+		}
+		if _, ok := azureHosts[host]; ok && strings.TrimSpace(token) != "" {
+			return fmt.Errorf(
+				"host %s is configured for both azure_devops and %s with incompatible clone auth; use separate hosts",
+				host, platformName,
+			)
+		}
+	}
+	for host := range azureHosts {
+		cloneMgr.SetAzureBearerTokenSource(
+			host,
+			azuredevopsclient.NewCLITokenSource(),
+		)
+	}
+	return nil
+}
+
 func resolveStartupRepos(
 	ctx context.Context,
 	cfg *config.Config,
@@ -630,11 +669,14 @@ func validateProviderHostKeys(providerTokens map[string]string) error {
 	for key, token := range providerTokens {
 		platformName, host := splitProviderHostKey(key)
 		if existing, ok := byHost[host]; ok {
-			if existing.token != token {
+			if existing.token != "" && token != "" && existing.token != token {
 				return fmt.Errorf(
 					"host %s is configured for both %s and %s with different clone tokens; use identical tokens or separate hosts",
 					host, existing.platform, platformName,
 				)
+			}
+			if existing.token == "" && token != "" {
+				byHost[host] = hostToken{platform: platformName, token: token}
 			}
 			continue
 		}

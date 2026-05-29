@@ -3,19 +3,20 @@ package gitclone
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	gitcmd "go.kenn.io/kit/git/cmd"
-	gitremote "go.kenn.io/kit/git/remote"
-	"go.kenn.io/middleman/internal/procutil"
 	"golang.org/x/sync/singleflight"
+
+	"go.kenn.io/middleman/internal/gitenv"
+	"go.kenn.io/middleman/internal/procutil"
 )
 
 // ensureCloneTimeout caps how long a single bare-clone create-or-fetch
@@ -30,10 +31,27 @@ const ensureCloneTimeout = 15 * time.Minute
 // ErrNotFound is returned when a git ref or object cannot be resolved.
 var ErrNotFound = errors.New("git object not found")
 
+type TokenSource interface {
+	Token(ctx context.Context) (string, error)
+}
+
+type hostAuthMode int
+
+const (
+	hostAuthModeBasicToken hostAuthMode = iota + 1
+	hostAuthModeBearerTokenSource
+)
+
+type hostAuth struct {
+	mode        hostAuthMode
+	token       string
+	tokenSource TokenSource
+}
+
 // Manager manages bare git clones for diff computation.
 type Manager struct {
-	baseDir string            // directory to store clones
-	tokens  map[string]string // host -> token (e.g., "github.com" -> "ghp_...")
+	baseDir  string              // directory to store clones
+	hostAuth map[string]hostAuth // host -> auth config
 
 	// ensureSF deduplicates concurrent EnsureClone calls for the same
 	// (host, owner, name). Without it, callers like the periodic syncer,
@@ -47,29 +65,92 @@ type Manager struct {
 // tokens maps each host (e.g., "github.com") to its auth token.
 // A nil or empty map means all operations proceed without auth.
 func New(baseDir string, tokens map[string]string) *Manager {
-	return &Manager{baseDir: baseDir, tokens: tokens}
+	authByHost := make(map[string]hostAuth, len(tokens))
+	for host, token := range tokens {
+		if strings.TrimSpace(token) == "" {
+			continue
+		}
+		authByHost[host] = hostAuth{mode: hostAuthModeBasicToken, token: token}
+	}
+	return &Manager{
+		baseDir:  baseDir,
+		hostAuth: authByHost,
+	}
+}
+
+func (m *Manager) SetAzureBearerTokenSource(host string, tokenSource TokenSource) {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return
+	}
+	if m.hostAuth == nil {
+		m.hostAuth = make(map[string]hostAuth)
+	}
+	if tokenSource == nil {
+		delete(m.hostAuth, host)
+		return
+	}
+	m.hostAuth[host] = hostAuth{
+		mode:        hostAuthModeBearerTokenSource,
+		tokenSource: tokenSource,
+	}
 }
 
 // ClonePath returns the filesystem path for a repo's bare clone.
 // Path is partitioned by host: {baseDir}/{host}/{owner}/{name}.git
 func (m *Manager) ClonePath(host, owner, name string) (string, error) {
-	if host == "" && owner == "" {
-		// Preserve local fixture clones at {baseDir}/{name}.git while
-		// still using kit's path validator for the repository name.
-		if _, err := gitremote.ClonePath(m.baseDir, gitremote.Identity{
-			Host:  "local",
-			Owner: "fixture",
-			Name:  name,
-		}); err != nil {
-			return "", err
-		}
-		return filepath.Join(m.baseDir, name+".git"), nil
+	if err := validateClonePathValue("host", host, false, true); err != nil {
+		return "", err
 	}
-	return gitremote.ClonePath(m.baseDir, gitremote.Identity{
-		Host:  host,
-		Owner: owner,
-		Name:  name,
-	})
+	if err := validateClonePathValue("owner", owner, true, true); err != nil {
+		return "", err
+	}
+	if err := validateClonePathValue("name", name, false, false); err != nil {
+		return "", err
+	}
+	clonePath := filepath.Join(m.baseDir, host, owner, name+".git")
+	rel, err := relativeClonePath(m.baseDir, clonePath)
+	if err != nil {
+		return "", err
+	}
+	if err := validateClonePathValue("relative", rel, true, false); err != nil {
+		return "", err
+	}
+	return clonePath, nil
+}
+
+func relativeClonePath(baseDir, clonePath string) (string, error) {
+	baseAbs, err := filepath.Abs(baseDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve clone base: %w", err)
+	}
+	cloneAbs, err := filepath.Abs(clonePath)
+	if err != nil {
+		return "", fmt.Errorf("resolve clone path: %w", err)
+	}
+	rel, err := filepath.Rel(baseAbs, cloneAbs)
+	if err != nil {
+		return "", fmt.Errorf("resolve clone relative path: %w", err)
+	}
+	return filepath.ToSlash(rel), nil
+}
+
+func validateClonePathValue(label, value string, allowSlash, allowEmpty bool) error {
+	if value == "" && allowEmpty {
+		return nil
+	}
+	if value == "" || strings.TrimSpace(value) != value || filepath.IsAbs(value) || strings.Contains(value, "\\") {
+		return fmt.Errorf("unsafe clone path %s %q", label, value)
+	}
+	if !allowSlash && strings.Contains(value, "/") {
+		return fmt.Errorf("unsafe clone path %s %q", label, value)
+	}
+	for part := range strings.SplitSeq(value, "/") {
+		if part == "" || part == "." || part == ".." {
+			return fmt.Errorf("unsafe clone path %s %q", label, value)
+		}
+	}
+	return nil
 }
 
 // EnsureClone creates or fetches a bare clone for the given repo.
@@ -308,17 +389,121 @@ func (m *Manager) MergeBase(
 	return strings.TrimSpace(string(out)), nil
 }
 
-// git runs a git command with auth configured for the given host.
+// git runs a git command with auth env vars set for the given host.
 func validateRemoteURLHost(expectedHost, remoteURL string) error {
-	return gitremote.ValidateRemoteHost(expectedHost, remoteURL)
+	actualHost := remoteURLHost(remoteURL)
+	if actualHost == "" {
+		return nil
+	}
+	if normalizeCloneHost(actualHost) != normalizeCloneHost(expectedHost) {
+		return fmt.Errorf(
+			"clone remote host %q does not match configured platform host %q",
+			actualHost, expectedHost,
+		)
+	}
+	return nil
 }
 
 func validateRemoteURLIdentity(expectedHost, owner, name, remoteURL string) error {
-	return gitremote.ValidateRemoteIdentity(gitremote.Identity{
-		Host:  expectedHost,
-		Owner: owner,
-		Name:  name,
-	}, remoteURL)
+	if err := validateRemoteURLHost(expectedHost, remoteURL); err != nil {
+		return err
+	}
+	actualRepo := remoteURLRepoPath(remoteURL)
+	if actualRepo == "" {
+		return nil
+	}
+	expectedRepo := strings.Trim(strings.TrimSpace(owner)+"/"+strings.TrimSpace(name), "/")
+	if !strings.EqualFold(actualRepo, expectedRepo) {
+		return fmt.Errorf(
+			"clone remote repo %q does not match configured repo %q",
+			actualRepo, expectedRepo,
+		)
+	}
+	return nil
+}
+
+func normalizeRemoteRepoPath(repoPath string) string {
+	repoPath = strings.Trim(strings.TrimSpace(repoPath), "/")
+	repoPath = strings.TrimSuffix(repoPath, ".git")
+	repoPath = strings.ReplaceAll(repoPath, "/_git/", "/")
+	return strings.Trim(repoPath, "/")
+}
+
+func remoteURLHost(remoteURL string) string {
+	remoteURL = strings.TrimSpace(remoteURL)
+	if remoteURL == "" {
+		return ""
+	}
+	if isLocalRemoteURL(remoteURL) {
+		return ""
+	}
+	if u, err := url.Parse(remoteURL); err == nil {
+		if u.Host != "" {
+			return u.Host
+		}
+	}
+	prefix, _, ok := strings.Cut(remoteURL, ":")
+	if !ok || strings.Contains(prefix, "/") {
+		return ""
+	}
+	if at := strings.LastIndex(prefix, "@"); at >= 0 {
+		prefix = prefix[at+1:]
+	}
+	return prefix
+}
+
+func remoteURLRepoPath(remoteURL string) string {
+	remoteURL = strings.TrimSpace(remoteURL)
+	if remoteURL == "" {
+		return ""
+	}
+	if isLocalRemoteURL(remoteURL) {
+		return ""
+	}
+	var repoPath string
+	if u, err := url.Parse(remoteURL); err == nil && u.Host != "" {
+		repoPath = u.Path
+	} else {
+		prefix, path, ok := strings.Cut(remoteURL, ":")
+		if !ok || strings.Contains(prefix, "/") {
+			return ""
+		}
+		repoPath = path
+	}
+	repoPath = normalizeRemoteRepoPath(repoPath)
+	if repoPath == "" || strings.Contains(repoPath, "\\") {
+		return ""
+	}
+	return repoPath
+}
+
+func isLocalRemoteURL(remoteURL string) bool {
+	if filepath.VolumeName(remoteURL) != "" || isWindowsDrivePath(remoteURL) {
+		return true
+	}
+	if u, err := url.Parse(remoteURL); err == nil && strings.EqualFold(u.Scheme, "file") {
+		return true
+	}
+	return false
+}
+
+func isWindowsDrivePath(value string) bool {
+	if len(value) < 3 || value[1] != ':' {
+		return false
+	}
+	drive := value[0]
+	if (drive < 'A' || drive > 'Z') && (drive < 'a' || drive > 'z') {
+		return false
+	}
+	return value[2] == '\\' || value[2] == '/'
+}
+
+func normalizeCloneHost(host string) string {
+	host = strings.ToLower(strings.Trim(strings.TrimSpace(host), "[]"))
+	if before, ok := strings.CutSuffix(host, ":443"); ok {
+		return before
+	}
+	return host
 }
 
 func (m *Manager) git(
@@ -327,41 +512,92 @@ func (m *Manager) git(
 	return m.gitWithInput(ctx, host, dir, nil, args...)
 }
 
+func gitCommandNeedsAuth(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	switch args[0] {
+	case "clone", "fetch":
+		return true
+	case "remote":
+		return len(args) >= 4 && args[1] == "set-head" && args[3] == "-a"
+	default:
+		return false
+	}
+}
+
+func (m *Manager) authHeader(ctx context.Context, host string) (string, error) {
+	auth, ok := m.hostAuth[host]
+	if !ok {
+		return "", nil
+	}
+	switch auth.mode {
+	case hostAuthModeBearerTokenSource:
+		token, err := auth.tokenSource.Token(ctx)
+		if err != nil {
+			return "", fmt.Errorf("resolve git auth token for %s: %w", host, err)
+		}
+		if token == "" {
+			return "", nil
+		}
+		return "Authorization: Bearer " + token, nil
+	case hostAuthModeBasicToken:
+		cred := base64.StdEncoding.EncodeToString(
+			[]byte("x-access-token:" + auth.token))
+		return "Authorization: Basic " + cred, nil
+	default:
+		return "", nil
+	}
+}
+
 func (m *Manager) gitWithInput(
 	ctx context.Context, host, dir string, input []byte, args ...string,
 ) ([]byte, error) {
-	runner := m.gitRunner(host)
-	var stdin io.Reader
+	cmd := procutil.CommandContext(ctx, "git", args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
 	if input != nil {
-		stdin = bytes.NewReader(input)
+		cmd.Stdin = bytes.NewReader(input)
 	}
-	release, err := procutil.TryAcquire(ctx, "git subprocess capacity")
-	if err != nil {
-		return nil, err
+	cmd.Env = append(gitenv.StripAll(os.Environ()),
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_CONFIG_NOSYSTEM=1",
+	)
+	if nullConfig := gitenv.NullConfigPath(); nullConfig != "" {
+		cmd.Env = append(cmd.Env, "GIT_CONFIG_GLOBAL="+nullConfig)
 	}
-	defer release()
-	out, stderr, err := runner.Run(ctx, dir, stdin, args...)
+	configCount := 0
+	addGitConfig := func(key, value string) {
+		cmd.Env = append(cmd.Env,
+			fmt.Sprintf("GIT_CONFIG_KEY_%d=%s", configCount, key),
+			fmt.Sprintf("GIT_CONFIG_VALUE_%d=%s", configCount, value),
+		)
+		configCount++
+	}
+	addGitConfig("gc.auto", "0")
+	addGitConfig("maintenance.auto", "false")
+	if gitCommandNeedsAuth(args) {
+		header, err := m.authHeader(ctx, host)
+		if err != nil {
+			return nil, err
+		}
+		if header != "" {
+			addGitConfig("http.extraHeader", header)
+		}
+	}
+	cmd.Env = append(cmd.Env, fmt.Sprintf("GIT_CONFIG_COUNT=%d", configCount))
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := procutil.Output(ctx, cmd, "git subprocess capacity")
 	if err != nil {
-		msg := string(stderr)
+		msg := stderr.String()
 		if isNotFoundError(msg) {
 			return nil, fmt.Errorf("%w: %s", ErrNotFound, msg)
 		}
 		return nil, fmt.Errorf("%w: %s", err, msg)
 	}
 	return out, nil
-}
-
-func (m *Manager) gitRunner(host string) gitcmd.Runner {
-	// Middleman relies on kit's automation defaults here: inherited GIT_*
-	// variables are stripped, global/system config is ignored, and terminal
-	// prompts are disabled. Clone/fetch still uses middleman's subprocess
-	// limiter above because it shares capacity with the rest of the app.
-	runner := gitcmd.New()
-	if token := m.tokens[host]; token != "" {
-		// GitHub's smart HTTP endpoint expects Basic auth credentials.
-		runner = runner.WithBasicAuth("x-access-token", token)
-	}
-	return runner
 }
 
 // isNotFoundError checks if git stderr indicates a missing object or ref.

@@ -1069,6 +1069,73 @@ describe("EventTimeline", () => {
     );
   });
 
+  it("renders Azure DevOps comment links when route context is available", () => {
+    render(EventTimeline, {
+      props: {
+        events: [makeEvent({
+          EventType: "issue_comment",
+          Body: "Comment body",
+          PlatformExternalID: "55:1001",
+        })],
+        provider: "azure_devops",
+        platformHost: "dev.azure.com",
+        repoOwner: "AcmeOrg/Payments",
+        repoName: "Service",
+        repoPath: "AcmeOrg/Payments/Service",
+        itemType: "pull",
+        itemNumber: 17,
+      },
+    });
+
+    const link = screen.getByTitle("Open in provider");
+    expect(link.getAttribute("href")).toBe(
+      "https://dev.azure.com/AcmeOrg/Payments/_git/Service/pullrequest/17?_a=overview&discussionId=55",
+    );
+  });
+
+  it("renders Azure DevOps iteration events with their summary", () => {
+    render(EventTimeline, {
+      props: {
+        events: [makeEvent({
+          EventType: "iteration",
+          Summary: "Iteration 3",
+          Body: "Source updated: abc1234 -> def5678\nReason: push",
+          MetadataJSON: JSON.stringify({
+            iteration_id: 3,
+            compare_from_sha: "abc1234",
+            compare_to_sha: "def5678",
+          }),
+        })],
+      },
+    });
+
+    const label = screen.getByText("Iteration");
+    expect(label).toBeTruthy();
+    expect(label.getAttribute("style")).toContain("var(--accent-amber)");
+    expect(screen.getByText("Iteration 3")).toBeTruthy();
+    expect(screen.getByText(/Source updated: abc1234 -> def5678/)).toBeTruthy();
+  });
+
+  it("renders merged events as compact rows", () => {
+    render(EventTimeline, {
+      props: {
+        events: [makeEvent({
+          EventType: "merged",
+          Author: "Merge Bot",
+          Summary: "Merged",
+          Body: "Merged",
+        })],
+      },
+    });
+
+    const label = screen.getByText("Merged");
+    expect(label).toBeTruthy();
+    expect(label.getAttribute("style")).toContain("var(--accent-purple)");
+    expect(screen.getByText("Merge Bot")).toBeTruthy();
+    expect(document.querySelector(".event--compact")).not.toBeNull();
+    expect(screen.getAllByText("Merged")).toHaveLength(2);
+  });
+
   it("renders system events as compact rows", () => {
     render(EventTimeline, {
       props: {

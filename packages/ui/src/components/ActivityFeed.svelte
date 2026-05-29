@@ -29,6 +29,7 @@
   import ArrowUpRightIcon from "@lucide/svelte/icons/arrow-up-right";
   import ChevronsDownUpIcon from "@lucide/svelte/icons/chevrons-down-up";
   import ChevronsUpDownIcon from "@lucide/svelte/icons/chevrons-up-down";
+  import { isBotAuthor } from "../utils/bot-authors.js";
 
   const { activity, settings, sync, grouping } = getStores();
   const navigate = getNavigate();
@@ -80,6 +81,8 @@
     review: "Reviews",
     commit: "Commits",
     force_push: "Force pushes",
+    iteration: "Iterations",
+    merged: "Merges",
   };
 
   const EVENT_COLORS: Record<EventType, string> = {
@@ -87,14 +90,9 @@
     review: "var(--accent-green)",
     commit: "var(--accent-teal)",
     force_push: "var(--accent-red)",
+    iteration: "var(--accent-amber)",
+    merged: "var(--accent-purple)",
   };
-
-  const BOT_SUFFIXES = ["[bot]", "-bot", "bot"];
-
-  function isBot(author: string): boolean {
-    const lower = author.toLowerCase();
-    return BOT_SUFFIXES.some((s) => lower.endsWith(s));
-  }
 
   const hiddenFilterCount = $derived(
     (EVENT_TYPES.length - activity.getEnabledEvents().size)
@@ -193,6 +191,8 @@
       case "force_push": return "Force-pushed";
       case "default_branch_commit": return "Commit";
       case "default_branch_force_push": return "Force-pushed";
+      case "iteration": return "Iteration";
+      case "merged": return "Merged";
       default: return item.activity_type;
     }
   }
@@ -252,7 +252,7 @@
         it.item_state !== "merged" && it.item_state !== "closed");
     }
     if (activity.getHideBots()) {
-      result = result.filter((it) => !isBot(it.author));
+      result = result.filter((it) => !isBotAuthor(it.author));
     }
     if (activity.getHideDefaultBranchActivity()) {
       result = result.filter((it) => !isDefaultBranchActivity(it));
@@ -400,6 +400,8 @@
       case "default_branch_commit": return "evt-commit";
       case "force_push": return "evt-force-push";
       case "default_branch_force_push": return "evt-force-push";
+      case "iteration": return "evt-iteration";
+      case "merged": return "evt-merged";
       default: return "";
     }
   }
@@ -410,6 +412,8 @@
       : type === "review" ? "chip--green"
       : type === "commit" || type === "default_branch_commit" ? "chip--teal"
       : type === "force_push" || type === "default_branch_force_push" ? "chip--red"
+      : type === "iteration" ? "chip--amber"
+      : type === "merged" ? "chip--purple"
       : "chip--muted";
     return `evt-label ${eventClass(type)} ${toneClass}`;
   }
@@ -1165,6 +1169,8 @@
   :global(.evt-label.evt-review) { color: var(--accent-green); }
   :global(.evt-label.evt-commit) { color: var(--accent-teal); }
   :global(.evt-label.evt-force-push) { color: var(--accent-red); }
+  :global(.evt-label.evt-iteration) { color: var(--accent-amber); }
+  :global(.evt-label.evt-merged) { color: var(--accent-purple); }
 
   .sha {
     color: var(--text-muted);
