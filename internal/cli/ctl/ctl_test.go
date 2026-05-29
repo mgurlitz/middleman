@@ -37,7 +37,7 @@ port = 8123
 	cmd := newCommand(commandDeps{
 		Stdout: &bytes.Buffer{},
 		Stderr: &bytes.Buffer{},
-		Restish: func(_ context.Context, _ cliConfig, _ string, requestURL string, _ []string) ([]byte, error) {
+		Request: func(_ context.Context, _ cliConfig, _ string, requestURL string, _ []string) ([]byte, error) {
 			got.url = requestURL
 			return nil, nil
 		},
@@ -57,7 +57,7 @@ func TestRootHelpPointsAgentsToQuickstartAndAPI(t *testing.T) {
 	cmd := newCommand(commandDeps{
 		Stdout: &stdout,
 		Stderr: &stderr,
-		Restish: func(context.Context, cliConfig, string, string, []string) ([]byte, error) {
+		Request: func(context.Context, cliConfig, string, string, []string) ([]byte, error) {
 			return nil, nil
 		},
 	})
@@ -117,7 +117,7 @@ func TestQuickstartFormatsStructuredOutput(t *testing.T) {
 	assert.Contains(lines[0], `"jsonl"`)
 }
 
-func TestPullsCommandDelegatesToRestishWithAgentFriendlyDefaults(t *testing.T) {
+func TestPullsCommandDelegatesToRequesterWithAgentFriendlyDefaults(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	var got struct {
@@ -130,7 +130,7 @@ func TestPullsCommandDelegatesToRestishWithAgentFriendlyDefaults(t *testing.T) {
 	cmd := newCommand(commandDeps{
 		Stdout: &stdout,
 		Stderr: &bytes.Buffer{},
-		Restish: func(_ context.Context, cfg cliConfig, method, requestURL string, bodyArgs []string) ([]byte, error) {
+		Request: func(_ context.Context, cfg cliConfig, method, requestURL string, bodyArgs []string) ([]byte, error) {
 			got.cfg = cfg
 			got.method = method
 			got.url = requestURL
@@ -175,7 +175,7 @@ func TestRawAPICommandBuildsMiddlemanAPIURLAndBodyArgs(t *testing.T) {
 	cmd := newCommand(commandDeps{
 		Stdout: &bytes.Buffer{},
 		Stderr: &bytes.Buffer{},
-		Restish: func(_ context.Context, _ cliConfig, method, requestURL string, bodyArgs []string) ([]byte, error) {
+		Request: func(_ context.Context, _ cliConfig, method, requestURL string, bodyArgs []string) ([]byte, error) {
 			got.method = method
 			got.url = requestURL
 			got.bodyArgs = append([]string(nil), bodyArgs...)
@@ -200,7 +200,7 @@ func TestRawAPICommandRejectsAbsoluteURLs(t *testing.T) {
 	cmd := newCommand(commandDeps{
 		Stdout: &bytes.Buffer{},
 		Stderr: &bytes.Buffer{},
-		Restish: func(context.Context, cliConfig, string, string, []string) ([]byte, error) {
+		Request: func(context.Context, cliConfig, string, string, []string) ([]byte, error) {
 			called = true
 			return nil, nil
 		},
@@ -224,7 +224,7 @@ func TestRawAPICommandWritesErrorResponseBody(t *testing.T) {
 	cmd := newCommand(commandDeps{
 		Stdout: &stdout,
 		Stderr: &bytes.Buffer{},
-		Restish: func(context.Context, cliConfig, string, string, []string) ([]byte, error) {
+		Request: func(context.Context, cliConfig, string, string, []string) ([]byte, error) {
 			return []byte(`{"code":"not_found","details":{"repo":"acme/widget"}}`),
 				errors.New("middleman API returned 404 Not Found")
 		},
@@ -253,7 +253,7 @@ func TestRawAPICommandRejectsDotSegmentPaths(t *testing.T) {
 			cmd := newCommand(commandDeps{
 				Stdout: &bytes.Buffer{},
 				Stderr: &bytes.Buffer{},
-				Restish: func(context.Context, cliConfig, string, string, []string) ([]byte, error) {
+				Request: func(context.Context, cliConfig, string, string, []string) ([]byte, error) {
 					called = true
 					return nil, nil
 				},
@@ -279,7 +279,7 @@ func TestRawAPICommandAllowsEncodedSlashesInRouteParameters(t *testing.T) {
 	cmd := newCommand(commandDeps{
 		Stdout: &bytes.Buffer{},
 		Stderr: &bytes.Buffer{},
-		Restish: func(_ context.Context, _ cliConfig, method, requestURL string, _ []string) ([]byte, error) {
+		Request: func(_ context.Context, _ cliConfig, method, requestURL string, _ []string) ([]byte, error) {
 			got.method = method
 			got.url = requestURL
 			return nil, nil
@@ -308,7 +308,7 @@ func TestPullGetAllowsNestedOwners(t *testing.T) {
 	cmd := newCommand(commandDeps{
 		Stdout: &bytes.Buffer{},
 		Stderr: &bytes.Buffer{},
-		Restish: func(_ context.Context, _ cliConfig, method, requestURL string, _ []string) ([]byte, error) {
+		Request: func(_ context.Context, _ cliConfig, method, requestURL string, _ []string) ([]byte, error) {
 			got.method = method
 			got.url = requestURL
 			return nil, nil
@@ -339,7 +339,7 @@ func TestAPIListCommandDiscoversOpenAPIOperations(t *testing.T) {
 	cmd := newCommand(commandDeps{
 		Stdout: &stdout,
 		Stderr: &bytes.Buffer{},
-		Restish: func(_ context.Context, _ cliConfig, method, requestURL string, bodyArgs []string) ([]byte, error) {
+		Request: func(_ context.Context, _ cliConfig, method, requestURL string, bodyArgs []string) ([]byte, error) {
 			got.method = method
 			got.url = requestURL
 			got.bodyArgs = append([]string(nil), bodyArgs...)
@@ -468,7 +468,7 @@ func jsonNumberField(t *testing.T, raw string) float64 {
 	return 0
 }
 
-func TestRestishRequesterFetchesCompleteJSON(t *testing.T) {
+func TestAPIRequesterFetchesCompleteJSON(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("MIDDLEMAN_RESTISH_CONFIG_DIR", t.TempDir())
@@ -482,17 +482,15 @@ func TestRestishRequesterFetchesCompleteJSON(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	body, err := makeRestishRequest(context.Background(), cliConfig{timeout: 30 * time.Second}, http.MethodGet, server.URL+"/api/v1/repos", nil)
+	body, err := makeAPIRequest(context.Background(), cliConfig{timeout: 30 * time.Second}, http.MethodGet, server.URL+"/api/v1/repos", nil)
 
 	require.NoError(err)
 	assert.JSONEq(fmt.Sprintf(`[{"name":%q}]`, longTitle), string(body))
 }
 
-func TestRestishRequesterSetsJSONContentTypeForMutations(t *testing.T) {
+func TestAPIRequesterSetsJSONContentTypeForMutations(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	t.Setenv("MIDDLEMAN_RESTISH_CONFIG_DIR", t.TempDir())
-	t.Setenv("MIDDLEMAN_RESTISH_CACHE_DIR", t.TempDir())
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(http.MethodPost, r.Method)
 		assert.Equal("application/json", r.Header.Get("Content-Type"))
@@ -501,13 +499,38 @@ func TestRestishRequesterSetsJSONContentTypeForMutations(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	body, err := makeRestishRequest(context.Background(), cliConfig{timeout: 30 * time.Second}, http.MethodPost, server.URL+"/api/v1/sync", nil)
+	body, err := makeAPIRequest(context.Background(), cliConfig{timeout: 30 * time.Second}, http.MethodPost, server.URL+"/api/v1/sync", nil)
 
 	require.NoError(err)
 	assert.Empty(body)
 }
 
-func TestRestishRequesterReturnsErrorResponseBody(t *testing.T) {
+func TestAPIRequesterEncodesYAMLStyleMutationBodiesAsJSON(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(http.MethodPost, r.Method)
+		assert.Equal("application/json", r.Header.Get("Content-Type"))
+		payload, err := io.ReadAll(r.Body)
+		require.NoError(err)
+		assert.JSONEq(`{"body":"LGTM","draft":false}`, string(payload))
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	t.Cleanup(server.Close)
+
+	body, err := makeAPIRequest(
+		context.Background(),
+		cliConfig{timeout: 30 * time.Second},
+		http.MethodPost,
+		server.URL+"/api/v1/pulls/gh/acme/widget/7/comments",
+		[]string{"body: LGTM", "draft: false"},
+	)
+
+	require.NoError(err)
+	assert.Empty(body)
+}
+
+func TestAPIRequesterReturnsErrorResponseBody(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("MIDDLEMAN_RESTISH_CONFIG_DIR", t.TempDir())
@@ -520,7 +543,7 @@ func TestRestishRequesterReturnsErrorResponseBody(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	body, err := makeRestishRequest(context.Background(), cliConfig{timeout: 30 * time.Second}, http.MethodGet, server.URL+"/api/v1/missing", nil)
+	body, err := makeAPIRequest(context.Background(), cliConfig{timeout: 30 * time.Second}, http.MethodGet, server.URL+"/api/v1/missing", nil)
 
 	require.Error(err)
 	assert.Contains(err.Error(), "404 Not Found")

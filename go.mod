@@ -19,7 +19,6 @@ require (
 	github.com/klauspost/compress v1.18.5
 	github.com/oapi-codegen/runtime v1.3.1
 	github.com/posthog/posthog-go v1.12.6
-	github.com/rest-sh/restish v0.21.2
 	github.com/shurcooL/githubv4 v0.0.0-20260209031235-2402fdf4a9ed
 	github.com/sourcegraph/go-diff v0.7.0
 	github.com/spf13/cobra v1.10.2

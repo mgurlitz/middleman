@@ -1,6 +1,7 @@
 package ctl
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,11 +13,8 @@ import (
 	"reflect"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/rest-sh/restish/cli"
-	"github.com/rest-sh/restish/openapi"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
@@ -28,7 +26,7 @@ const (
 	apiPrefix = "/api/v1"
 )
 
-type restishRequester func(context.Context, cliConfig, string, string, []string) ([]byte, error)
+type apiRequester func(context.Context, cliConfig, string, string, []string) ([]byte, error)
 
 type Options struct {
 	Stdout io.Writer
@@ -38,7 +36,7 @@ type Options struct {
 type commandDeps struct {
 	Stdout  io.Writer
 	Stderr  io.Writer
-	Restish restishRequester
+	Request apiRequester
 }
 
 type cliConfig struct {
@@ -102,8 +100,8 @@ func newCommand(deps commandDeps) *cobra.Command {
 	if deps.Stderr == nil {
 		deps.Stderr = os.Stderr
 	}
-	if deps.Restish == nil {
-		deps.Restish = makeRestishRequest
+	if deps.Request == nil {
+		deps.Request = makeAPIRequest
 	}
 
 	cfg := viper.New()
@@ -119,7 +117,7 @@ func newCommand(deps commandDeps) *cobra.Command {
 		Long: strings.TrimSpace(`middleman serves middleman API content for agents.
 
 Start with "middleman quickstart" for the API shape, then use typed shortcuts
-like "middleman pulls" or the Restish-backed escape hatch:
+like "middleman pulls" or the raw API escape hatch:
 
   middleman api METHOD PATH [body...]
 
@@ -145,7 +143,7 @@ newline-delimited JSON with --output jsonl.`),
 		if err != nil {
 			return cliConfig{}, nil, err
 		}
-		body, err := deps.Restish(ctx, current, method, requestURL, bodyArgs)
+		body, err := deps.Request(ctx, current, method, requestURL, bodyArgs)
 		if err != nil {
 			return current, body, err
 		}
@@ -319,7 +317,7 @@ func newQuickstartCommand(cfg *viper.Viper, stdout io.Writer) *cobra.Command {
 					{"command": "middleman pulls --state open --limit 20", "does": "GET /api/v1/pulls with query parameters"},
 					{"command": "middleman issues --output jsonl", "does": "Emit one issue JSON object per line"},
 					{"command": "middleman api list", "does": "List API methods, paths, summaries, and parameters"},
-					{"command": "middleman api GET /pulls", "does": "Raw Restish-backed request to /api/v1/pulls"},
+					{"command": "middleman api GET /pulls", "does": "Raw request to /api/v1/pulls"},
 					{"command": "middleman api GET /version", "does": "Show server version"},
 					{"command": "middleman api GET /sync/status", "does": "Inspect sync state"},
 					{"command": "middleman api POST /sync", "does": "Trigger a sync"},
@@ -339,8 +337,8 @@ func newQuickstartCommand(cfg *viper.Viper, stdout io.Writer) *cobra.Command {
 func newAPICommand(request func(context.Context, string, string, url.Values, []string) error, listOperations func(context.Context) error) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "api METHOD PATH [body...]",
-		Short: "Call any middleman API path through Restish",
-		Long: strings.TrimSpace(`Call any middleman API path through Restish.
+		Short: "Call any middleman API path directly",
+		Long: strings.TrimSpace(`Call any middleman API path directly.
 
 Use "middleman api list" to discover available methods and paths.`),
 		Args: cobra.MinimumNArgs(2),
@@ -623,26 +621,15 @@ func encodeJSONLines(w io.Writer, payload any) error {
 	return enc.Encode(payload)
 }
 
-var restishMu sync.Mutex
-
-func makeRestishRequest(ctx context.Context, cfg cliConfig, method, requestURL string, bodyArgs []string) ([]byte, error) {
-	restishMu.Lock()
-	defer restishMu.Unlock()
-
-	viper.Reset()
-	cli.Init("middleman_restish", "dev")
-	cli.Defaults()
-	cli.AddLoader(openapi.New())
-	viper.Set("rsh-no-cache", true)
-	viper.Set("rsh-profile", "default")
+func makeAPIRequest(ctx context.Context, cfg cliConfig, method, requestURL string, bodyArgs []string) ([]byte, error) {
+	payload, err := encodeRequestBody(bodyArgs)
+	if err != nil {
+		return nil, err
+	}
 
 	var body io.Reader
-	if len(bodyArgs) > 0 {
-		bodyString, err := cli.GetBody("application/json", bodyArgs)
-		if err != nil {
-			return nil, err
-		}
-		body = strings.NewReader(bodyString)
+	if payload != nil {
+		body = bytes.NewReader(payload)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, strings.ToUpper(method), requestURL, body)
@@ -654,14 +641,12 @@ func makeRestishRequest(ctx context.Context, cfg cliConfig, method, requestURL s
 		req.Header.Set("Content-Type", "application/json")
 	}
 
-	resp, err := cli.MakeRequest(req, cli.WithClient(&http.Client{Timeout: cfg.timeout}))
+	resp, err := (&http.Client{Timeout: cfg.timeout}).Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	if err := cli.DecodeResponse(resp); err != nil {
-		return nil, err
-	}
+
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
@@ -670,6 +655,28 @@ func makeRestishRequest(ctx context.Context, cfg cliConfig, method, requestURL s
 		return responseBody, apiStatusError{Status: resp.Status, Body: responseBody}
 	}
 	return responseBody, nil
+}
+
+func encodeRequestBody(bodyArgs []string) ([]byte, error) {
+	if len(bodyArgs) == 0 {
+		return nil, nil
+	}
+	raw := strings.TrimSpace(strings.Join(bodyArgs, "\n"))
+	if raw == "" {
+		return nil, nil
+	}
+	if json.Valid([]byte(raw)) {
+		return []byte(raw), nil
+	}
+	var payload any
+	if err := yaml.Unmarshal([]byte(raw), &payload); err != nil {
+		return nil, fmt.Errorf("decode request body: %w", err)
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("encode request body: %w", err)
+	}
+	return encoded, nil
 }
 
 func methodRequiresJSONContentType(method string) bool {
