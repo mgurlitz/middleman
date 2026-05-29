@@ -185,7 +185,7 @@ func providerCapabilitiesFromPlatform(caps platform.Capabilities) providerCapabi
 }
 
 func defaultGitHubProviderCapabilities() providerCapabilitiesResponse {
-	return providerCapabilitiesFromPlatform(platform.Capabilities{
+	resp := providerCapabilitiesFromPlatform(platform.Capabilities{
 		ReadRepositories:  true,
 		ReadMergeRequests: true,
 		ReadIssues:        true,
@@ -202,6 +202,8 @@ func defaultGitHubProviderCapabilities() providerCapabilitiesResponse {
 		IssueMutation:     true,
 		LabelMutation:     false,
 	})
+	resp.LocalClone = platform.SupportsLocalClone(platform.KindGitHub)
+	return resp
 }
 
 func repoProviderKind(repo db.Repo) platform.Kind {
@@ -263,11 +265,15 @@ func (s *Server) capabilitiesForProvider(
 	if s != nil && s.syncer != nil {
 		caps, err := s.syncer.ProviderCapabilities(kind, host)
 		if err == nil {
-			return providerCapabilitiesFromPlatform(caps)
+			resp := providerCapabilitiesFromPlatform(caps)
+			resp.LocalClone = platform.SupportsLocalClone(kind)
+			return resp
 		}
 	}
 	if kind == platform.KindGitHub {
 		return defaultGitHubProviderCapabilities()
 	}
-	return providerCapabilitiesResponse{}
+	resp := providerCapabilitiesResponse{}
+	resp.LocalClone = platform.SupportsLocalClone(kind)
+	return resp
 }

@@ -114,7 +114,23 @@ describe("ActivityThreaded collapse", () => {
     expect(label?.textContent).toBe("acme/widgets");
   });
 
+  it("renders merged activity with the shared merged label", () => {
+    render(ActivityThreaded, {
+      props: {
+        items: [activityItem("merged", {
+          activity_type: "merged",
+          body_preview: "Merged",
+          item_state: "merged",
+        })],
+        onSelectItem: undefined,
+      },
+    });
+
+    expect(document.querySelector(".event-type.evt-merged")?.textContent).toContain("Merged");
+  });
+
   it("renders branch activity as top-level rows interleaved with item threads", async () => {
+
     const { container } = render(ActivityThreaded, {
       props: {
         items: [

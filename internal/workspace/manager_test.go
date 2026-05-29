@@ -186,6 +186,13 @@ func TestCreatePRHeadRepoClassification(t *testing.T) {
 			headBranch:   "feature/enterprise",
 			headRepoURL:  "https://GHE.example.com:8443/Acme/Widget.git",
 		},
+		{
+			name:         "same-repo Azure DevOps PR is not fork",
+			platformHost: "dev.azure.com",
+			number:       247,
+			headBranch:   "feature/ado",
+			headRepoURL:  "https://dev.azure.com/acme/_git/widget",
+		},
 	}
 
 	for _, tt := range tests {

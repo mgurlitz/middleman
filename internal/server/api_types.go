@@ -37,6 +37,7 @@ type providerCapabilitiesResponse struct {
 	ReviewDraftMutation    bool     `json:"review_draft_mutation"`
 	ReviewThreadResolution bool     `json:"review_thread_resolution"`
 	ReadReviewThreads      bool     `json:"read_review_threads"`
+	LocalClone             bool     `json:"local_clone"`
 	NativeMultilineRanges  bool     `json:"native_multiline_ranges"`
 	SupportedReviewActions []string `json:"supported_review_actions"`
 }

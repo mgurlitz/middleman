@@ -69,6 +69,7 @@ Expandable check run section on each PR shows pass/fail/pending status with colo
 - **Dark mode** -- auto-detects system preference, with a manual toggle
 - **GitHub Enterprise, GitLab, Forgejo, and Gitea** -- set
   `platform`/`platform_host` per repo to connect to other provider hosts
+- **Azure DevOps POC** -- read-only pull request sync via Microsoft Entra / Azure CLI auth
 - **Copy to clipboard** -- one-click copy of PR/issue bodies and comments
 - **Settings UI** -- add/remove repos and configure activity feed defaults from the browser
 - **Reverse proxy support** -- deploy behind a proxy with the `base_path` config
@@ -89,9 +90,10 @@ Expandable check run section on each PR shows pass/fail/pending status with colo
 
 - Go 1.26+
 - [Bun](https://bun.sh/) (or install via [mise](https://mise.jdx.dev/))
-- A provider token with read access to the configured repos. GitHub can use a
-  classic or fine-grained token; GitLab, Forgejo, and Gitea use host-scoped
-  tokens from config.
+- Provider auth for the repos you track:
+  - GitHub can use a classic or fine-grained token
+  - GitLab, Forgejo, and Gitea use host-scoped tokens from config
+  - Azure DevOps POC uses `az account get-access-token` on demand (install the Azure CLI and sign in with `az login`)
 
 ### Build and run
 
@@ -292,6 +294,36 @@ Forgejo and Gitea preserve owner and repo casing as returned by the server.
 Unlike GitLab, nested owners are not supported for these providers; `repo_path`
 is normally the same as `owner/name` and is most useful when middleman parsed a
 repository URL or needs to preserve provider-canonical casing.
+
+Azure DevOps is currently a read-only PR-only proof of concept. Configure the
+repo with `owner = "ORG/PROJECT"`, `name = "REPO"`, and
+`repo_path = "ORG/PROJECT/REPO"`:
+
+```toml
+[[platforms]]
+type = "azure_devops"
+host = "dev.azure.com"
+
+[[repos]]
+platform = "azure_devops"
+platform_host = "dev.azure.com"
+owner = "AcmeOrg/Payments"
+name = "Service"
+repo_path = "AcmeOrg/Payments/Service"
+```
+
+Middleman fetches Azure DevOps access tokens from the Azure CLI on demand with:
+
+```sh
+az login
+az account get-access-token \
+  --resource 499b84ac-1321-427f-aa17-267ca6975798 \
+  --query accessToken -o tsv
+```
+
+The current Azure DevOps POC supports repository lookup, open pull requests,
+PR comment threads, and PR iteration history. It does not yet support work
+items, write mutations, or clone-backed diff/workspace flows.
 
 ## Telemetry
 

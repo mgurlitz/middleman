@@ -11,6 +11,7 @@ import (
 	"go.kenn.io/middleman/internal/db"
 	"go.kenn.io/middleman/internal/github"
 	"go.kenn.io/middleman/internal/platform"
+	azuredevopsclient "go.kenn.io/middleman/internal/platform/azuredevops"
 	forgejoclient "go.kenn.io/middleman/internal/platform/forgejo"
 	giteaclient "go.kenn.io/middleman/internal/platform/gitea"
 	gitlabclient "go.kenn.io/middleman/internal/platform/gitlab"
@@ -89,6 +90,16 @@ func defaultProviderFactories() map[string]providerFactory {
 			}
 			return providerFactoryOutput{provider: client}, nil
 		},
+		string(platform.KindAzureDevOps): func(input providerFactoryInput) (providerFactoryOutput, error) {
+			client, err := azuredevopsclient.NewClient(
+				input.host,
+				azuredevopsclient.WithRateTracker(input.rateTracker),
+			)
+			if err != nil {
+				return providerFactoryOutput{}, err
+			}
+			return providerFactoryOutput{provider: client}, nil
+		},
 	}
 }
 
@@ -106,6 +117,10 @@ func collectProviderTokenSources(
 		}
 		src := set.Upsert(desc)
 		if _, err := src.Token(ctx); err != nil {
+			if errors.Is(err, tokenauth.ErrMissingToken) && desc.Key.Platform == string(platform.KindAzureDevOps) {
+				providerSources[key] = src
+				return nil
+			}
 			if !plan.Required && errors.Is(err, tokenauth.ErrMissingToken) {
 				return nil
 			}
@@ -125,6 +140,15 @@ func collectProviderTokenSources(
 		if err := add(plan); err != nil {
 			return nil, err
 		}
+	}
+	azureDefault := tokenauth.Descriptor{
+		Key: tokenauth.Key{
+			Platform: string(platform.KindAzureDevOps),
+			Host:     platform.DefaultAzureDevOpsHost,
+		},
+	}
+	if err := add(config.ProviderTokenSource{Descriptor: azureDefault}); err != nil {
+		return nil, err
 	}
 	if err := validateProviderHostKeys(providerSources); err != nil {
 		return nil, err
@@ -156,10 +180,12 @@ func buildProviderStartup(
 	for key, tokenSource := range providerSources {
 		platformName, host := splitProviderHostKey(key)
 		if _, err := tokenSource.Token(context.Background()); err != nil {
-			return providerStartup{}, fmt.Errorf(
-				"read token for %s host %s via %s: %w",
-				platformName, host, tokenSource.Descriptor().SafeString(), err,
-			)
+			if !(platformName == string(platform.KindAzureDevOps) && errors.Is(err, tokenauth.ErrMissingToken)) {
+				return providerStartup{}, fmt.Errorf(
+					"read token for %s host %s via %s: %w",
+					platformName, host, tokenSource.Descriptor().SafeString(), err,
+				)
+			}
 		}
 		rateKey := github.RateBucketKey(platformName, host)
 		if _, ok := startup.rateTrackers[rateKey]; !ok {

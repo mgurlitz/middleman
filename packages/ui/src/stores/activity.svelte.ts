@@ -5,7 +5,14 @@ export type TimeRange = "24h" | "7d" | "30d" | "90d";
 export type ViewMode = "flat" | "threaded";
 export type ItemFilter = "all" | "prs" | "issues";
 
-export const DEFAULT_EVENT_TYPES = ["comment", "review", "commit", "force_push"] as const;
+export const DEFAULT_EVENT_TYPES = [
+  "comment",
+  "review",
+  "commit",
+  "force_push",
+  "iteration",
+  "merged",
+] as const;
 
 // Default-branch activity rows render as "Commit"/"Force-pushed" just like
 // their PR counterparts, so the event-type toggles must govern both kinds.

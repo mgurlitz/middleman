@@ -16,6 +16,7 @@
     type ReviewThread,
   } from "./review-thread-context.js";
   import PierreFileDiff from "./PierreFileDiff.svelte";
+  import { providerDiffFileURL } from "../../api/provider-links.js";
 
   const stores = getStores();
   const diffStore = stores.diff;
@@ -75,6 +76,11 @@
     reviewThreads.filter((thread) => threadMatchesFile(thread)),
   );
   const fileHunks = $derived(file.hunks ?? []);
+  const providerFileURL = $derived(providerDiffFileURL(
+    { provider, platformHost, owner, name, repoPath },
+    number,
+    file,
+  ));
 
   // Track viewport visibility so off-screen files skip expensive tokenization
   // on whitespace toggles and theme switches. Starts false so the initial
@@ -508,21 +514,34 @@
 </script>
 
 <div class="diff-file" data-file-path={file.path} bind:this={fileEl}>
-  <button class="file-header" onclick={toggle} title={collapsed ? "Expand file" : "Collapse file"}>
-    <svg class="collapse-chevron" class:collapse-chevron--collapsed={collapsed} width="12" height="12" viewBox="0 0 12 12" fill="none">
-      <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
-    <span class="file-path" class:file-path--deleted={file.status === "deleted"}>
-      {displayPath(file)}
-    </span>
-    <span class="file-stats">
-      <DiffStats
-        additions={file.additions}
-        deletions={file.deletions}
-        dimZeros
-      />
-    </span>
-  </button>
+  <div class="file-header">
+    <button class="file-toggle" onclick={toggle} title={collapsed ? "Expand file" : "Collapse file"}>
+      <svg class="collapse-chevron" class:collapse-chevron--collapsed={collapsed} width="12" height="12" viewBox="0 0 12 12" fill="none">
+        <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span class="file-path" class:file-path--deleted={file.status === "deleted"}>
+        {displayPath(file)}
+      </span>
+      <span class="file-stats">
+        <DiffStats
+          additions={file.additions}
+          deletions={file.deletions}
+          dimZeros
+        />
+      </span>
+    </button>
+    {#if providerFileURL}
+      <a
+        class="file-provider-link"
+        href={providerFileURL}
+        target="_blank"
+        rel="noopener noreferrer"
+        title="Open in provider"
+      >
+        Open
+      </a>
+    {/if}
+  </div>
   {#if !collapsed}
     <div class="file-content">
       {#each fileLevelReviewThreads as thread (thread.id)}
@@ -584,13 +603,40 @@
     background: var(--diff-header-bg);
     border-bottom: 1px solid var(--diff-border);
     font-size: var(--font-size-sm);
-    text-align: left;
-    cursor: pointer;
     color: var(--diff-text);
   }
 
-  .file-header:hover {
-    background: var(--bg-surface-hover);
+  .file-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex: 1;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+    color: inherit;
+  }
+
+  .file-toggle:hover {
+    color: var(--text-primary);
+  }
+
+  .file-provider-link {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+  }
+
+  .file-provider-link:hover {
+    color: var(--text-primary);
+    text-decoration: underline;
   }
 
   .collapse-chevron {

@@ -12,6 +12,7 @@
 
   const ago = $derived(timeAgo(pr.LastActivityAt));
   const repoLabel = $derived(pr.repo.name);
+  const displayAuthor = $derived(pr.AuthorDisplayName || pr.Author);
 
   function handleDragStart(e: DragEvent): void {
     if (!e.dataTransfer) return;
@@ -31,7 +32,7 @@
   <p class="card-title">{pr.Title}</p>
   <p class="card-meta">{repoLabel} #{pr.Number}</p>
   <div class="card-footer">
-    <span class="card-author">{pr.Author}</span>
+    <span class="card-author">{displayAuthor}</span>
     <span class="card-time">{ago}</span>
   </div>
 </button>

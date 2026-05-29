@@ -192,6 +192,17 @@ describe("PullDetail approvals", () => {
     vi.useRealTimers();
   });
 
+  it("prefers AuthorDisplayName over the raw author id in the meta row", () => {
+    const detail = pullDetail();
+    detail.merge_request.Author = "svc-principal-1234";
+    detail.merge_request.AuthorDisplayName = "Acme Build Service";
+
+    renderPullDetail(detail);
+
+    expect(screen.getByText("Acme Build Service")).toBeTruthy();
+    expect(screen.queryByText("svc-principal-1234")).toBeNull();
+  });
+
   it("shows approval count and expands approver names", async () => {
     renderPullDetail(pullDetail());
 

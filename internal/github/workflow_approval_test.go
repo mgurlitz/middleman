@@ -144,6 +144,7 @@ func TestParseHeadRepoFullName(t *testing.T) {
 		{name: "https without .git", in: "https://github.com/cwensel/roborev", want: "cwensel/roborev"},
 		{name: "ssh form", in: "git@github.com:cwensel/roborev.git", want: "cwensel/roborev"},
 		{name: "trailing slash", in: "https://github.com/cwensel/roborev/", want: "cwensel/roborev"},
+		{name: "azure devops https", in: "https://dev.azure.com/AcmeOrg/Payments/_git/Service", want: "AcmeOrg/Payments/Service"},
 		{name: "empty", in: "", want: ""},
 		{name: "garbage", in: "not-a-url", want: ""},
 	}

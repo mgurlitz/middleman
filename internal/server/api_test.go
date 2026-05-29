@@ -17147,6 +17147,63 @@ func TestAPIListActivityCanHideDefaultBranchActivity(t *testing.T) {
 	assert.Equal(int64(1), (*resp.JSON200.Items)[0].ItemNumber)
 }
 
+func TestAPIListActivityIncludesIterationEvents(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	client := setupTestClient(t, srv)
+	prID := seedPR(t, database, "acme", "widget", 1)
+	ctx := t.Context()
+
+	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
+		MergeRequestID: prID,
+		EventType:      "iteration",
+		Author:         "ada",
+		Summary:        "Iteration 2",
+		Body:           "Source updated: abc1234 -> def5678",
+		CreatedAt:      time.Now().UTC(),
+		DedupeKey:      "iteration-2",
+	}}))
+
+	since := time.Now().UTC().AddDate(0, 0, -7).Format(time.RFC3339)
+	types := "iteration"
+	resp, err := client.HTTP.ListActivityWithResponse(
+		ctx, &generated.ListActivityParams{Since: &since, Types: &types},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Items)
+	require.Len(*resp.JSON200.Items, 1)
+	assert.Equal("iteration", (*resp.JSON200.Items)[0].ActivityType)
+	assert.Equal("ada", (*resp.JSON200.Items)[0].Author)
+	assert.Equal("Iteration 2", (*resp.JSON200.Items)[0].BodyPreview)
+}
+
+func TestAPIListActivityPrefersPRAuthorDisplayName(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	client := setupTestClient(t, srv)
+
+	seedPR(t, database, "acme", "widget", 1, func(pr *db.MergeRequest) {
+		pr.Author = "svc-principal-1234"
+		pr.AuthorDisplayName = "Acme Build Service"
+	})
+
+	since := time.Now().UTC().AddDate(0, 0, -7).Format(time.RFC3339)
+	types := "new_pr"
+	resp, err := client.HTTP.ListActivityWithResponse(
+		t.Context(), &generated.ListActivityParams{Since: &since, Types: &types},
+	)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode())
+	require.NotNil(resp.JSON200)
+	require.NotNil(resp.JSON200.Items)
+	require.Len(*resp.JSON200.Items, 1)
+	assert.Equal("Acme Build Service", (*resp.JSON200.Items)[0].Author)
+}
+
 func TestAPIListActivityAcceptsHostQualifiedRepoFilter(t *testing.T) {
 	assert := Assert.New(t)
 	require := require.New(t)

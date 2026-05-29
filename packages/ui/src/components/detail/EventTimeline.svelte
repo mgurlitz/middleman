@@ -15,6 +15,10 @@
   import { copyToClipboard } from "../../utils/clipboard.js";
   import { getStores } from "../../context.js";
   import {
+    providerCommentURL,
+    type TimelineItemType,
+  } from "../../api/provider-links.js";
+  import {
     buildItemReferenceLink,
     type ItemReferenceDataAttributes,
   } from "../../utils/item-reference.js";
@@ -34,6 +38,8 @@
     repoName?: string;
     repoPath?: string | undefined;
     number?: number | undefined;
+    itemType?: TimelineItemType;
+    itemNumber?: number | undefined;
     canResolveReviewThreads?: boolean;
     canReplyToThreads?: boolean;
     filtered?: boolean;
@@ -51,6 +57,8 @@
     repoName,
     repoPath,
     number = undefined,
+    itemType = "pull",
+    itemNumber = undefined,
     canResolveReviewThreads = false,
     canReplyToThreads = false,
     filtered = false,
@@ -63,18 +71,20 @@
   const diffStore = stores?.diff;
   const diffReviewDraft = stores?.diffReviewDraft;
   const diff = $derived(diffStore?.getDiff() ?? null);
+  const resolvedItemNumber = $derived(itemNumber ?? number);
+  const pullNumber = $derived(itemType === "pull" ? resolvedItemNumber : undefined);
 
   $effect(() => {
-    if (!provider || !repoOwner || !repoName || !repoPath || number == null) return;
+    if (!provider || !repoOwner || !repoName || !repoPath || pullNumber == null) return;
     const nextRef = { provider, platformHost, owner: repoOwner, name: repoName, repoPath };
-    const nextNumber = number;
+    const nextNumber = pullNumber;
     untrack(() => {
       diffReviewDraft?.setRouteContext(nextRef, nextNumber);
     });
   });
 
   $effect(() => {
-    if (!diffStore || !provider || !repoOwner || !repoName || !repoPath || number == null) return;
+    if (!diffStore || !provider || !repoOwner || !repoName || !repoPath || pullNumber == null) return;
     if (!events.some((event) => reviewThreadFor(event) !== null)) return;
     if (diffStore.isDiffLoading()) return;
     const current = diffStore.getCurrentPR();
@@ -85,12 +95,12 @@
       current?.owner === repoOwner &&
       current.name === repoName &&
       current.repoPath === repoPath &&
-      current.number === number
+      current.number === pullNumber
     ) {
       return;
     }
     untrack(() => {
-      void diffStore.loadDiff(repoOwner, repoName, number, {
+      void diffStore.loadDiff(repoOwner, repoName, pullNumber, {
         provider,
         platformHost,
         owner: repoOwner,
@@ -106,6 +116,8 @@
     review: "Review",
     commit: "Commit",
     force_push: "Force-pushed",
+    iteration: "Iteration",
+    merged: "Merged",
     review_comment: "Review Comment",
     assigned: "Assigned",
     unassigned: "Unassigned",
@@ -121,6 +133,8 @@
     review_comment: "var(--accent-purple)",
     commit: "var(--accent-green)",
     force_push: "var(--accent-red)",
+    iteration: "var(--accent-amber)",
+    merged: "var(--accent-purple)",
     assigned: "var(--accent-blue)",
     unassigned: "var(--text-muted)",
     merged: "var(--accent-purple)",
@@ -548,6 +562,7 @@
       eventType === "commit" ||
       eventType === "comment_deleted" ||
       eventType === "force_push" ||
+      eventType === "merged" ||
       eventType === "cross_referenced" ||
       eventType === "renamed_title" ||
       eventType === "base_ref_changed" ||
@@ -673,8 +688,8 @@
   }
 
   async function refreshAfterThreadChange(): Promise<void> {
-    if (!provider || !repoOwner || !repoName || !repoPath || number == null) return;
-    await detailStore?.refreshDetailOnly(repoOwner, repoName, number, {
+    if (!provider || !repoOwner || !repoName || !repoPath || pullNumber == null) return;
+    await detailStore?.refreshDetailOnly(repoOwner, repoName, pullNumber, {
       provider,
       platformHost,
       repoPath,
@@ -731,7 +746,7 @@
       repoOwner !== undefined &&
       repoName !== undefined &&
       repoPath !== undefined &&
-      number !== undefined &&
+      pullNumber !== undefined &&
       replyTargetID(entry) !== null
     );
   }
@@ -764,7 +779,7 @@
   async function submitReply(entry: TimelineEntry): Promise<void> {
     const targetID = replyTargetID(entry);
     const body = replyDraft.trim();
-    if (!targetID || !provider || !repoOwner || !repoName || !repoPath || number === undefined) return;
+    if (!targetID || !provider || !repoOwner || !repoName || !repoPath || pullNumber === undefined) return;
     if (body === "") {
       replyError = "Reply body must not be empty";
       return;
@@ -772,7 +787,7 @@
     savingReplyThreadID = targetID;
     replyError = null;
     try {
-      const ok = await detailStore?.replyToDiscussion(repoOwner, repoName, number, targetID, body);
+      const ok = await detailStore?.replyToDiscussion(repoOwner, repoName, pullNumber, targetID, body);
       if (ok) {
         cancelReply();
       } else {
@@ -884,6 +899,22 @@
     event.preventDefault();
     startReply(entry);
   }
+
+  function commentLink(event: PREvent | IssueEvent): string | null {
+    if (!provider || !repoOwner || !repoName || !repoPath) return null;
+    return providerCommentURL(
+      {
+        provider,
+        platformHost,
+        owner: repoOwner,
+        name: repoName,
+        repoPath,
+      },
+      itemType,
+      resolvedItemNumber,
+      event,
+    );
+  }
 </script>
 
 {#snippet eventBody(
@@ -923,6 +954,17 @@
             >
               <PencilIcon size={14} />
             </button>
+          {/if}
+          {#if commentLink(event)}
+            <a
+              class="event-action-link"
+              href={commentLink(event) ?? undefined}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open in provider"
+            >
+              Open
+            </a>
           {/if}
           <button
             class="event-action-btn"
@@ -1004,6 +1046,17 @@
                 >
                   <PencilIcon size={14} />
                 </button>
+              {/if}
+              {#if commentLink(event)}
+                <a
+                  class="event-action-link"
+                  href={commentLink(event) ?? undefined}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Open in provider"
+                >
+                  Open
+                </a>
               {/if}
               <button
                 class="event-action-btn"
@@ -1186,12 +1239,23 @@
               {/if}
               <span class="event-time">{timeAgo(event.CreatedAt)}</span>
             </div>
-            {#if event.Summary && (event.EventType === "commit" || event.EventType === "force_push")}
+            {#if event.Summary && !["issue_comment", "review", "review_comment"].includes(event.EventType)}
               <p class="event-summary">{event.Summary}</p>
             {/if}
             {@render eventBody(event, false, entry.reviewThread, hasReplyOnlyAction ? entry : undefined)}
             {#if entry.replies.length > 0 || (canReplyToThread(entry) && !hasReplyOnlyAction)}
               <div class="thread-controls">
+                {#if commentLink(event)}
+                  <a
+                    class="event-action-link"
+                    href={commentLink(event) ?? undefined}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Open in provider"
+                  >
+                    Open
+                  </a>
+                {/if}
                 {#if entry.replies.length > 0}
                   <button
                     class="thread-toggle"
@@ -1626,12 +1690,31 @@
     transition: opacity 0.15s, background 0.15s, color 0.15s;
   }
 
+  .event-action-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--focus-detail-hit-target, 2rem);
+    height: var(--focus-detail-hit-target, 2rem);
+    padding: 0 0.5rem;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    opacity: 0;
+    transition: opacity 0.15s, background 0.15s, color 0.15s;
+  }
+
   .event-body-wrap:hover .event-action-btn,
-  .event-action-btn:focus-visible {
+  .event-body-wrap:hover .event-action-link,
+  .event-action-btn:focus-visible,
+  .event-action-link:focus-visible {
     opacity: 1;
   }
 
-  .event-action-btn:hover:not(:disabled) {
+  .event-action-btn:hover:not(:disabled),
+  .event-action-link:hover {
     background: var(--bg-surface-hover);
     color: var(--text-secondary);
   }
@@ -1652,7 +1735,8 @@
   }
 
   @media (hover: none) {
-    .event-action-btn {
+    .event-action-btn,
+    .event-action-link {
       opacity: 1;
     }
   }

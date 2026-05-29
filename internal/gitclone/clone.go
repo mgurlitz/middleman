@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,10 +15,10 @@ import (
 	"time"
 
 	gitcmd "go.kenn.io/kit/git/cmd"
-	gitremote "go.kenn.io/kit/git/remote"
+	"golang.org/x/sync/singleflight"
+
 	"go.kenn.io/middleman/internal/procutil"
 	"go.kenn.io/middleman/internal/tokenauth"
-	"golang.org/x/sync/singleflight"
 )
 
 // ensureCloneTimeout caps how long a single bare-clone create-or-fetch
@@ -32,10 +33,15 @@ const ensureCloneTimeout = 15 * time.Minute
 // ErrNotFound is returned when a git ref or object cannot be resolved.
 var ErrNotFound = errors.New("git object not found")
 
+type TokenSource interface {
+	Token(ctx context.Context) (string, error)
+}
+
 // Manager manages bare git clones for diff computation.
 type Manager struct {
-	baseDir      string                      // directory to store clones
-	tokenSources map[string]tokenauth.Source // host -> token source
+	baseDir       string                      // directory to store clones
+	tokenSources  map[string]tokenauth.Source // host -> token source
+	bearerSources map[string]TokenSource      // host -> bearer auth source
 
 	// ensureSF deduplicates concurrent EnsureClone calls for the same
 	// (host, owner, name). Without it, callers like the periodic syncer,
@@ -52,26 +58,76 @@ func New(baseDir string, tokenSources map[string]tokenauth.Source) *Manager {
 	return &Manager{baseDir: baseDir, tokenSources: tokenSources}
 }
 
+func (m *Manager) SetAzureBearerTokenSource(host string, tokenSource TokenSource) {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return
+	}
+	if tokenSource == nil {
+		delete(m.bearerSources, host)
+		return
+	}
+	if m.bearerSources == nil {
+		m.bearerSources = make(map[string]TokenSource)
+	}
+	m.bearerSources[host] = tokenSource
+}
+
 // ClonePath returns the filesystem path for a repo's bare clone.
 // Path is partitioned by host: {baseDir}/{host}/{owner}/{name}.git
 func (m *Manager) ClonePath(host, owner, name string) (string, error) {
-	if host == "" && owner == "" {
-		// Preserve local fixture clones at {baseDir}/{name}.git while
-		// still using kit's path validator for the repository name.
-		if _, err := gitremote.ClonePath(m.baseDir, gitremote.Identity{
-			Host:  "local",
-			Owner: "fixture",
-			Name:  name,
-		}); err != nil {
-			return "", err
-		}
-		return filepath.Join(m.baseDir, name+".git"), nil
+	if err := validateClonePathValue("host", host, false, true); err != nil {
+		return "", err
 	}
-	return gitremote.ClonePath(m.baseDir, gitremote.Identity{
-		Host:  host,
-		Owner: owner,
-		Name:  name,
-	})
+	if err := validateClonePathValue("owner", owner, true, true); err != nil {
+		return "", err
+	}
+	if err := validateClonePathValue("name", name, false, false); err != nil {
+		return "", err
+	}
+	clonePath := filepath.Join(m.baseDir, host, owner, name+".git")
+	rel, err := relativeClonePath(m.baseDir, clonePath)
+	if err != nil {
+		return "", err
+	}
+	if err := validateClonePathValue("relative", rel, true, false); err != nil {
+		return "", err
+	}
+	return clonePath, nil
+}
+
+func relativeClonePath(baseDir, clonePath string) (string, error) {
+	baseAbs, err := filepath.Abs(baseDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve clone base: %w", err)
+	}
+	cloneAbs, err := filepath.Abs(clonePath)
+	if err != nil {
+		return "", fmt.Errorf("resolve clone path: %w", err)
+	}
+	rel, err := filepath.Rel(baseAbs, cloneAbs)
+	if err != nil {
+		return "", fmt.Errorf("resolve clone relative path: %w", err)
+	}
+	return filepath.ToSlash(rel), nil
+}
+
+func validateClonePathValue(label, value string, allowSlash, allowEmpty bool) error {
+	if value == "" && allowEmpty {
+		return nil
+	}
+	if value == "" || strings.TrimSpace(value) != value || filepath.IsAbs(value) || strings.Contains(value, "\\") {
+		return fmt.Errorf("unsafe clone path %s %q", label, value)
+	}
+	if !allowSlash && strings.Contains(value, "/") {
+		return fmt.Errorf("unsafe clone path %s %q", label, value)
+	}
+	for part := range strings.SplitSeq(value, "/") {
+		if part == "" || part == "." || part == ".." {
+			return fmt.Errorf("unsafe clone path %s %q", label, value)
+		}
+	}
+	return nil
 }
 
 // EnsureClone creates or fetches a bare clone for the given repo.
@@ -311,15 +367,119 @@ func (m *Manager) MergeBase(
 }
 
 func validateRemoteURLHost(expectedHost, remoteURL string) error {
-	return gitremote.ValidateRemoteHost(expectedHost, remoteURL)
+	actualHost := remoteURLHost(remoteURL)
+	if actualHost == "" {
+		return nil
+	}
+	if normalizeCloneHost(actualHost) != normalizeCloneHost(expectedHost) {
+		return fmt.Errorf(
+			"clone remote host %q does not match configured platform host %q",
+			actualHost, expectedHost,
+		)
+	}
+	return nil
 }
 
 func validateRemoteURLIdentity(expectedHost, owner, name, remoteURL string) error {
-	return gitremote.ValidateRemoteIdentity(gitremote.Identity{
-		Host:  expectedHost,
-		Owner: owner,
-		Name:  name,
-	}, remoteURL)
+	if err := validateRemoteURLHost(expectedHost, remoteURL); err != nil {
+		return err
+	}
+	actualRepo := remoteURLRepoPath(remoteURL)
+	if actualRepo == "" {
+		return nil
+	}
+	expectedRepo := strings.Trim(strings.TrimSpace(owner)+"/"+strings.TrimSpace(name), "/")
+	if !strings.EqualFold(actualRepo, expectedRepo) {
+		return fmt.Errorf(
+			"clone remote repo %q does not match configured repo %q",
+			actualRepo, expectedRepo,
+		)
+	}
+	return nil
+}
+
+func normalizeRemoteRepoPath(repoPath string) string {
+	repoPath = strings.Trim(strings.TrimSpace(repoPath), "/")
+	repoPath = strings.TrimSuffix(repoPath, ".git")
+	repoPath = strings.ReplaceAll(repoPath, "/_git/", "/")
+	return strings.Trim(repoPath, "/")
+}
+
+func remoteURLHost(remoteURL string) string {
+	remoteURL = strings.TrimSpace(remoteURL)
+	if remoteURL == "" {
+		return ""
+	}
+	if isLocalRemoteURL(remoteURL) {
+		return ""
+	}
+	if u, err := url.Parse(remoteURL); err == nil {
+		if u.Host != "" {
+			return u.Host
+		}
+	}
+	prefix, _, ok := strings.Cut(remoteURL, ":")
+	if !ok || strings.Contains(prefix, "/") {
+		return ""
+	}
+	if at := strings.LastIndex(prefix, "@"); at >= 0 {
+		prefix = prefix[at+1:]
+	}
+	return prefix
+}
+
+func remoteURLRepoPath(remoteURL string) string {
+	remoteURL = strings.TrimSpace(remoteURL)
+	if remoteURL == "" {
+		return ""
+	}
+	if isLocalRemoteURL(remoteURL) {
+		return ""
+	}
+	var repoPath string
+	if u, err := url.Parse(remoteURL); err == nil && u.Host != "" {
+		repoPath = u.Path
+	} else {
+		prefix, path, ok := strings.Cut(remoteURL, ":")
+		if !ok || strings.Contains(prefix, "/") {
+			return ""
+		}
+		repoPath = path
+	}
+	repoPath = normalizeRemoteRepoPath(repoPath)
+	if repoPath == "" || strings.Contains(repoPath, "\\") {
+		return ""
+	}
+	return repoPath
+}
+
+func isLocalRemoteURL(remoteURL string) bool {
+	if filepath.VolumeName(remoteURL) != "" || isWindowsDrivePath(remoteURL) {
+		return true
+	}
+	if u, err := url.Parse(remoteURL); err == nil && strings.EqualFold(u.Scheme, "file") {
+		return true
+	}
+	return false
+}
+
+func isWindowsDrivePath(value string) bool {
+	if len(value) < 3 || value[1] != ':' {
+		return false
+	}
+	drive := value[0]
+	if (drive < 'A' || drive > 'Z') && (drive < 'a' || drive > 'z') {
+		return false
+	}
+	return value[2] == '\\' || value[2] == '/'
+}
+
+func normalizeCloneHost(host string) string {
+	host = strings.ToLower(strings.Trim(strings.TrimSpace(host), "[]"))
+	if before, ok := strings.CutSuffix(host, ":443"); ok {
+		return before
+	}
+	return host
 }
 
 // git runs a local git command against an already-cloned bare repo and
@@ -504,6 +664,16 @@ func newGitRunner() gitcmd.Runner {
 // plain runner.
 func (m *Manager) gitRunnerAuthed(ctx context.Context, host string) (gitcmd.Runner, error) {
 	runner := newGitRunner()
+	if source := m.bearerSources[host]; source != nil {
+		token, err := source.Token(ctx)
+		if err != nil {
+			return runner, fmt.Errorf("resolve git bearer token for host %s: %w", host, err)
+		}
+		if token != "" {
+			runner = runner.WithConfig("http.extraHeader", "Authorization: Bearer "+token)
+		}
+		return runner, nil
+	}
 	source := m.tokenSources[host]
 	if source == nil {
 		return runner, nil
