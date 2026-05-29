@@ -431,11 +431,15 @@ func validateRemoteURLHost(expectedHost, remoteURL string) error {
 }
 
 func validateRemoteURLIdentity(expectedHost, owner, name, remoteURL string) error {
+	// Azure DevOps inserts an API-specific _git segment between the project
+	// path and repository name. Remove only that marker for identity
+	// validation; Git still receives the original remote URL.
+	identityURL := strings.Replace(remoteURL, "/_git/", "/", 1)
 	return gitremote.ValidateRemoteIdentity(gitremote.Identity{
 		Host:  expectedHost,
 		Owner: owner,
 		Name:  name,
-	}, remoteURL)
+	}, identityURL)
 }
 
 // git runs a local git command against an already-cloned bare repo and
@@ -698,8 +702,16 @@ func (m *Manager) gitRunnerAuthed(
 		return runner, fmt.Errorf("resolve git token for host %s: %w", host, err)
 	}
 	if token != "" {
-		// GitHub's smart HTTP endpoint expects Basic auth credentials.
-		runner = runner.WithBasicAuth("x-access-token", token)
+		platform := source.Descriptor().Key.Platform
+		if strings.EqualFold(strings.TrimSpace(platform), "azure_devops") {
+			runner = runner.WithConfig(
+				"http.https://"+host+"/.extraheader",
+				"Authorization: Bearer "+token,
+			)
+		} else {
+			// GitHub-style smart HTTP endpoints expect Basic auth credentials.
+			runner = runner.WithBasicAuth("x-access-token", token)
+		}
 	}
 	return runner, nil
 }

@@ -11,6 +11,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/platform"
+	azuredevopsclient "go.kenn.io/forge/internal/platform/azuredevops"
 	forgejoclient "go.kenn.io/forge/internal/platform/forgejo"
 	giteaclient "go.kenn.io/forge/internal/platform/gitea"
 	gitlabclient "go.kenn.io/forge/internal/platform/gitlab"
@@ -54,6 +55,25 @@ type mutationTokenSource struct {
 
 func (s mutationTokenSource) Token(ctx context.Context) (string, error) {
 	return s.Source.Token(tokenauth.WithMutationAuth(ctx))
+}
+
+type azureCLITokenSource struct {
+	source     azuredevopsclient.TokenSource
+	descriptor tokenauth.Descriptor
+}
+
+func (s *azureCLITokenSource) Token(ctx context.Context) (string, error) {
+	return s.source.Token(ctx)
+}
+
+func (s *azureCLITokenSource) Invalidate() {
+	if invalidator, ok := s.source.(interface{ Invalidate() }); ok {
+		invalidator.Invalidate()
+	}
+}
+
+func (s *azureCLITokenSource) Descriptor() tokenauth.Descriptor {
+	return s.descriptor
 }
 
 type identityBoundMutationTokenSource struct {
@@ -230,6 +250,17 @@ func defaultProviderFactories() map[string]providerFactory {
 			}
 			return providerFactoryOutput{provider: client}, nil
 		},
+		string(platform.KindAzureDevOps): func(input providerFactoryInput) (providerFactoryOutput, error) {
+			client, err := azuredevopsclient.NewClient(
+				input.host,
+				azuredevopsclient.WithTokenSource(input.tokenSource),
+				azuredevopsclient.WithRateTracker(input.rateTracker),
+			)
+			if err != nil {
+				return providerFactoryOutput{}, err
+			}
+			return providerFactoryOutput{provider: client}, nil
+		},
 	}
 }
 
@@ -252,6 +283,11 @@ func collectProviderTokenSources(
 			tokenCtx = tokenauth.WithGitHubOwner(tokenCtx, plan.GitHubOwner)
 		}
 		if _, err := src.Token(tokenCtx); err != nil {
+			if errors.Is(err, tokenauth.ErrMissingToken) &&
+				desc.Key.Platform == string(platform.KindAzureDevOps) {
+				providerSources[key] = src
+				return nil
+			}
 			if !plan.Required && errors.Is(err, tokenauth.ErrMissingToken) {
 				return nil
 			}
@@ -323,6 +359,12 @@ func buildProviderStartup(
 	githubHosts := make(map[string]struct{}, len(providerSources))
 	for key, tokenSource := range providerSources {
 		platformName, host := splitProviderHostKey(key)
+		if platformName == string(platform.KindAzureDevOps) {
+			tokenSource = &azureCLITokenSource{
+				source:     azuredevopsclient.NewCLITokenSource(),
+				descriptor: tokenSource.Descriptor(),
+			}
+		}
 		rateKey := github.RateBucketKey(platformName, host, "host")
 		routedGitHub := platformName == string(platform.KindGitHub) && startup.githubClients[host] != nil
 		if !routedGitHub {

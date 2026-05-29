@@ -1433,6 +1433,7 @@
             repoOwner={owner}
             repoName={name}
             {repoPath}
+            itemType="issue"
             activityViewMode={detailActivityView.getMode()}
             onEditComment={capabilities.comment_mutation && !staleIssue && !editCommentGate.unavailable
               ? editTimelineComment

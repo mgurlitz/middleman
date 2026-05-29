@@ -802,6 +802,13 @@ func TestNormalizeCloneRepoIdentity(t *testing.T) {
 		"gitlab/gitlab.com/group/subgroup/project",
 		normalizeCloneRepoIdentity("gitlab", "git@gitlab.com:Group/Subgroup/Project.git"),
 	)
+	assert.Equal(
+		"azure_devops/dev.azure.com/acmeorg/payments/service",
+		normalizeCloneRepoIdentity(
+			"azure_devops",
+			"https://dev.azure.com/AcmeOrg/Payments/_git/Service",
+		),
+	)
 	assert.NotEqual(
 		normalizeCloneRepoIdentity("github", "https://forge.example/acme/widget.git"),
 		normalizeCloneRepoIdentity("gitlab", "https://forge.example/acme/widget.git"),

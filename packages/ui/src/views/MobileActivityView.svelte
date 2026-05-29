@@ -283,6 +283,10 @@
       case "force_push":
       case "default_branch_force_push":
         return "Force-pushed";
+      case "iteration":
+        return "Iteration";
+      case "merged":
+        return "Merged";
       case "notification":
         return notificationReasonLabel(item.body_preview);
       default:
@@ -314,6 +318,10 @@
       case "force_push":
       case "default_branch_force_push":
         return "danger";
+      case "iteration":
+        return "warning";
+      case "merged":
+        return "merged";
       default:
         return "info";
     }

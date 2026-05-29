@@ -93,6 +93,8 @@
     review: "Reviews",
     commit: "Commits",
     force_push: "Force pushes",
+    iteration: "Iterations",
+    merged: "Merges",
   };
 
   const EVENT_COLORS: Record<EventType, string> = {
@@ -100,6 +102,8 @@
     review: "var(--accent-green)",
     commit: "var(--accent-teal)",
     force_push: "var(--accent-red)",
+    iteration: "var(--accent-amber)",
+    merged: "var(--accent-purple)",
   };
 
   const BOT_SUFFIXES = ["[bot]", "-bot", "bot"];
@@ -211,6 +215,8 @@
       case "force_push": return "Force-pushed";
       case "default_branch_commit": return "Commit";
       case "default_branch_force_push": return "Force-pushed";
+      case "iteration": return "Iteration";
+      case "merged": return "Merged";
       case "notification": return notificationReasonLabel(item.body_preview);
       default: return item.activity_type;
     }
@@ -464,6 +470,8 @@
       case "default_branch_commit": return "evt-commit";
       case "force_push": return "evt-force-push";
       case "default_branch_force_push": return "evt-force-push";
+      case "iteration": return "evt-iteration";
+      case "merged": return "evt-merged";
       case "notification": return "evt-notification";
       default: return "";
     }
@@ -1300,6 +1308,8 @@
   :global(.evt-label.evt-review) { color: var(--accent-green); }
   :global(.evt-label.evt-commit) { color: var(--accent-teal); }
   :global(.evt-label.evt-force-push) { color: var(--accent-red); }
+  :global(.evt-label.evt-iteration) { color: var(--accent-amber); }
+  :global(.evt-label.evt-merged) { color: var(--accent-purple); }
   :global(.evt-label.evt-notification) { color: var(--accent-blue); }
 
   .sha {

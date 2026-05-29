@@ -1678,6 +1678,49 @@ name = "https://gitea.com/gitea/tea.git"
 	assert.Equal("gitea/tea", cfg.Repos[0].RepoPath)
 }
 
+func TestLoadAzureDevOpsDefaultHostAndNestedRepoPath(t *testing.T) {
+	assert := assert.New(t)
+	path := writeConfig(t, `
+[[repos]]
+platform = "azure_devops"
+repo_path = "AcmeOrg/Payments/Service"
+`)
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Repos, 1)
+	assert.Equal("azure_devops", cfg.Repos[0].Platform)
+	assert.Equal("dev.azure.com", cfg.Repos[0].PlatformHost)
+	assert.Equal("AcmeOrg/Payments", cfg.Repos[0].Owner)
+	assert.Equal("Service", cfg.Repos[0].Name)
+	assert.Equal("AcmeOrg/Payments/Service", cfg.Repos[0].RepoPath)
+}
+
+func TestLoadPlatformConfigAzureDevOpsAllowsEmptyToken(t *testing.T) {
+	assert := assert.New(t)
+	path := writeConfig(t, `
+[[platforms]]
+type = "azure_devops"
+host = "dev.azure.com"
+
+[[repos]]
+platform = "azure_devops"
+platform_host = "dev.azure.com"
+owner = "AcmeOrg/Payments"
+name = "Service"
+repo_path = "AcmeOrg/Payments/Service"
+`)
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Platforms, 1)
+	require.Len(t, cfg.Repos, 1)
+	assert.Equal("azure_devops", cfg.Platforms[0].Type)
+	assert.Equal("dev.azure.com", cfg.Platforms[0].Host)
+	assert.Empty(cfg.Platforms[0].TokenEnv)
+	assert.Equal("", cfg.TokenForPlatformHost("azure_devops", "dev.azure.com", ""))
+}
+
 func TestLoadKeepsExistingGitHubURLInference(t *testing.T) {
 	assert := assert.New(t)
 	path := writeConfig(t, `

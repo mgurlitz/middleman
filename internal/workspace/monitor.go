@@ -378,6 +378,7 @@ func cloneRepoPath(cloneURL string) string {
 		return ""
 	}
 	repoPath = strings.Trim(strings.TrimSpace(unescaped), "/")
+	repoPath = strings.ReplaceAll(repoPath, "/_git/", "/")
 	repoPath = strings.TrimSuffix(repoPath, ".git")
 	if strings.Count(repoPath, "/") < 1 {
 		return ""

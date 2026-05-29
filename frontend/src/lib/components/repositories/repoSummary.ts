@@ -6,6 +6,7 @@ import type {
   RepoSummaryIssue,
   RepoSummaryReleaseResponse,
 } from "@kenn-forge/ui/api/types";
+import { providerRepoURL } from "@kenn-forge/ui/api/provider-links";
 import { canonicalProvider } from "@kenn-forge/ui/api/provider-routes";
 
 export type RepoSummaryCard = Omit<RepoSummary, "active_authors" | "recent_issues" | "commit_timeline" | "releases"> & {
@@ -119,6 +120,16 @@ export function displayReleaseName(release: RepoSummaryReleaseResponse | undefin
 
 export function isStaleRelease(summary: RepoSummaryCard): boolean {
   return summary.latest_release !== undefined && (summary.commits_since_release ?? 0) >= staleReleaseCommitThreshold;
+}
+
+export function externalRepoURL(summary: RepoSummaryCard): string {
+  return providerRepoURL({
+    provider: summary.repo.provider,
+    platformHost: summary.repo.platform_host,
+    owner: summary.owner,
+    name: summary.name,
+    repoPath: summary.repo.repo_path,
+  });
 }
 
 export function normalizeSummaries(data: RepoSummary[] | null | undefined): RepoSummaryCard[] {
