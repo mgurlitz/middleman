@@ -87,6 +87,9 @@ jobs:
           - os: windows-latest
             goos: windows
             goarch: amd64
+          - os: windows-11-arm
+            goos: windows
+            goarch: arm64
 
     runs-on: ${{ matrix.os }}
     steps:
