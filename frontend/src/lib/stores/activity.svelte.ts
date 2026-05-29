@@ -28,8 +28,8 @@ export type ActivityItemType = "pr" | "issue";
 export type ActivityAPIItemType = ActivityItemType | "repo";
 
 export const DEFAULT_ACTIVITY_ITEM_TYPES = ["pr", "issue"] as const;
-export const DEFAULT_EVENT_TYPES = ["comment", "review", "commit", "force_push"] as const;
-const PR_TIMELINE_EVENT_TYPES = ["comment", "review", "force_push"] as const;
+export const DEFAULT_EVENT_TYPES = ["comment", "review", "commit", "force_push", "iteration", "merged"] as const;
+const PR_TIMELINE_EVENT_TYPES = ["comment", "review", "force_push", "iteration", "merged"] as const;
 const ISSUE_TIMELINE_EVENT_TYPES = ["comment"] as const;
 const NO_ACTIVITY_FILTER_TYPE = "none";
 const ACTIVITY_ITEM_TYPES_PARAM = "item_types";

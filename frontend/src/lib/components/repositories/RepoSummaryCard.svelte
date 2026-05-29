@@ -9,6 +9,7 @@
   import {
     displayReleaseName,
     isStaleRelease,
+    externalRepoURL,
     localDateTimeLabel,
     repoKey,
     repoStateKey,
@@ -50,9 +51,7 @@
 
   const key = $derived(repoKey(summary));
   const stateKey = $derived(repoStateKey(summary));
-  const repoURL = $derived(
-    `https://${summary.platform_host}/${summary.owner}/${summary.name}`,
-  );
+  const repoURL = $derived(externalRepoURL(summary));
   const showPlatformHost = $derived(shouldShowPlatformHost(summary));
   const syncTime = $derived(
     summary.last_sync_completed_at

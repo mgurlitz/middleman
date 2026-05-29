@@ -2943,6 +2943,76 @@ describe("EventTimeline", () => {
     expect(text.indexOf("3333333 -> 6666666")).toBeLessThan(text.indexOf("anchored original generation head"));
   });
 
+  it("copies Azure DevOps comment links when route context is available", async () => {
+    renderTimeline({
+      props: {
+        events: [
+          makeEvent({
+            EventType: "issue_comment",
+            Body: "Comment body",
+            PlatformExternalID: "55:1001",
+          }),
+        ],
+        provider: "azure_devops",
+        platformHost: "dev.azure.com",
+        repoOwner: "AcmeOrg/Payments",
+        repoName: "Service",
+        repoPath: "AcmeOrg/Payments/Service",
+        itemType: "pull",
+        number: 17,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Copy direct link" }));
+    expect(copyToClipboard).toHaveBeenCalledWith(
+      "https://dev.azure.com/AcmeOrg/Payments/_git/Service/pullrequest/17?_a=overview&discussionId=55",
+    );
+  });
+
+  it("renders Azure DevOps iteration events with their summary", () => {
+    renderTimeline({
+      props: {
+        events: [
+          makeEvent({
+            EventType: "iteration",
+            Summary: "Iteration 3",
+            Body: "Source updated: abc1234 -> def5678\nReason: push",
+            MetadataJSON: JSON.stringify({
+              iteration_id: 3,
+              compare_from_sha: "abc1234",
+              compare_to_sha: "def5678",
+            }),
+          }),
+        ],
+      },
+    });
+
+    const label = screen.getByText("Iteration");
+    expect(label).toBeTruthy();
+    expect(screen.getByText("Iteration 3")).toBeTruthy();
+    expect(screen.getByText(/Source updated: abc1234 -> def5678/)).toBeTruthy();
+  });
+
+  it("renders merged events as compact rows", () => {
+    renderTimeline({
+      props: {
+        events: [
+          makeEvent({
+            EventType: "merged",
+            Author: "Merge Bot",
+            Summary: "Merged",
+            Body: "Merged",
+          }),
+        ],
+      },
+    });
+
+    const label = screen.getAllByText("Merged")[0]!;
+    expect(label).toBeTruthy();
+    expect(screen.getByText("by Merge Bot")).toBeTruthy();
+    expect(document.querySelector(".event--compact")).not.toBeNull();
+  });
+
   it("renders system events as compact rows", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2024-06-01T16:00:00Z"));

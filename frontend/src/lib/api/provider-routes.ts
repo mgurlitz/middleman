@@ -20,6 +20,7 @@ const defaultHosts: Record<string, string> = {
   fj: "codeberg.org",
   gitea: "gitea.com",
   bitbucket: "bitbucket.org",
+  azure_devops: "dev.azure.com",
 };
 
 export function canonicalProvider(provider: string): string {
@@ -27,6 +28,7 @@ export function canonicalProvider(provider: string): string {
   if (normalized === "gh") return "github";
   if (normalized === "gl") return "gitlab";
   if (normalized === "fj") return "forgejo";
+  if (["ado", "azuredevops", "azure-devops"].includes(normalized)) return "azure_devops";
   return normalized;
 }
 

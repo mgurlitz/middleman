@@ -8,19 +8,21 @@ import (
 type Kind string
 
 const (
-	KindGitHub    Kind = "github"
-	KindGitLab    Kind = "gitlab"
-	KindForgejo   Kind = "forgejo"
-	KindGitea     Kind = "gitea"
-	KindBitbucket Kind = "bitbucket"
+	KindGitHub      Kind = "github"
+	KindGitLab      Kind = "gitlab"
+	KindForgejo     Kind = "forgejo"
+	KindGitea       Kind = "gitea"
+	KindBitbucket   Kind = "bitbucket"
+	KindAzureDevOps Kind = "azure_devops"
 )
 
 const (
-	DefaultGitHubHost    = "github.com"
-	DefaultGitLabHost    = "gitlab.com"
-	DefaultForgejoHost   = "codeberg.org"
-	DefaultGiteaHost     = "gitea.com"
-	DefaultBitbucketHost = "bitbucket.org"
+	DefaultGitHubHost      = "github.com"
+	DefaultGitLabHost      = "gitlab.com"
+	DefaultForgejoHost     = "codeberg.org"
+	DefaultGiteaHost       = "gitea.com"
+	DefaultBitbucketHost   = "bitbucket.org"
+	DefaultAzureDevOpsHost = "dev.azure.com"
 )
 
 type RepoRef struct {

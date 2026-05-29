@@ -159,7 +159,7 @@
         <span class="repo-name" style={`color: ${hashColor(repoColorKey)}`} title={repoLabel}>{repoLabel}</span>
         <span class="meta-sep">·</span>
       {/if}
-      <span class="meta-text">{pr.Author}</span>
+      <span class="meta-text">{pr.AuthorDisplayName || pr.Author}</span>
     </span>
     <span class="meta-right">
       {#if pr.workspace}

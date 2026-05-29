@@ -44,7 +44,7 @@ function settings(collapse: boolean, useWorkspaceActivityForRecency = false): Ac
     hide_bots: false,
     collapse_threads: collapse,
     item_types: ["pr", "issue"],
-    event_types: ["comment", "review", "commit", "force_push"],
+    event_types: [...DEFAULT_EVENT_TYPES],
     hide_notifications: false,
     hide_default_branch: false,
     roll_up_commits: false,
@@ -2101,6 +2101,8 @@ describe("buildActivityFilterTypes", () => {
       "review",
       "commit",
       "force_push",
+      "iteration",
+      "merged",
       "notification",
     ]);
   });
@@ -2113,6 +2115,8 @@ describe("buildActivityFilterTypes", () => {
       "comment",
       "review",
       "force_push",
+      "iteration",
+      "merged",
       "notification",
     ]);
   });
@@ -2131,6 +2135,8 @@ describe("buildActivityFilterTypes", () => {
       "review",
       "commit",
       "force_push",
+      "iteration",
+      "merged",
     ]);
   });
 
@@ -2321,7 +2327,11 @@ describe("activity store URL hydration", () => {
   );
 
   it("normalizes explicit default item and event selections out of the URL", () => {
-    window.history.replaceState(null, "", "/?item_types=pr,issue&event_types=comment,review,commit,force_push");
+    window.history.replaceState(
+      null,
+      "",
+      "/?item_types=pr,issue&event_types=comment,review,commit,force_push,iteration,merged",
+    );
     const s = makeStore();
     s.hydrateDefaults(settings(false));
     s.initializeFromMount();
@@ -2936,15 +2946,16 @@ describe("activity store default-branch visibility", () => {
     first.initializeFromMount();
 
     expect(first.getHideDefaultBranchActivity()).toBe(true);
-    expect(first.getEnabledEvents()).toEqual(new Set(DEFAULT_EVENT_TYPES));
+    const legacyEvents = new Set(["comment", "review", "commit", "force_push"]);
+    expect(first.getEnabledEvents()).toEqual(legacyEvents);
     const normalized = new URLSearchParams(window.location.search);
     expect(normalized.has("types")).toBe(false);
-    expect(normalized.has("event_types")).toBe(false);
+    expect(normalized.get("event_types")).toBe("comment,review,commit,force_push");
     expect(normalized.get("hide_branch")).toBe("1");
 
     const fresh = makeStore();
     fresh.initializeFromMount();
-    expect(fresh.getEnabledEvents()).toEqual(new Set(DEFAULT_EVENT_TYPES));
+    expect(fresh.getEnabledEvents()).toEqual(legacyEvents);
   });
 
   it("drops a stale default-branch token when the legacy Commits toggle is absent", () => {

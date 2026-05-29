@@ -10,7 +10,7 @@ import (
 // RepositoryKey is a repository's stable provider key. GitHub, GitLab,
 // Forgejo, Gitea, and Bitbucket Data Center assign a positive integer
 // repository ID once per host and keep it across renames and transfers.
-// Bitbucket Cloud has no integer ID; its key is the repository UUID. A key
+// Bitbucket Cloud and Azure DevOps use repository UUIDs rather than integer IDs. A key
 // holds exactly one of the two, and the zero value is the key of a
 // repository the provider has not verified. Compare keys with ==.
 //
@@ -32,7 +32,7 @@ func RepositoryIDKey(id int64) RepositoryKey {
 	return RepositoryKey{id: id}
 }
 
-// RepositoryUUIDKey returns the key for a Bitbucket Cloud repository UUID.
+// RepositoryUUIDKey returns the key for a provider's repository UUID.
 func RepositoryUUIDKey(id uuid.UUID) RepositoryKey {
 	return RepositoryKey{uuid: id}
 }
@@ -52,7 +52,7 @@ func RepositoryKeyFromWire(id int64, repositoryUUID uuid.UUID) (RepositoryKey, e
 	}
 }
 
-// ParseRepositoryUUID parses a Bitbucket Cloud repository UUID given as text,
+// ParseRepositoryUUID parses a repository UUID given as text,
 // with or without the braces Bitbucket writes around it. Empty text is the
 // nil UUID.
 func ParseRepositoryUUID(text string) (uuid.UUID, error) {
@@ -76,7 +76,7 @@ func (k RepositoryKey) ID() (id int64, ok bool) {
 	return k.id, k.id > 0
 }
 
-// UUID returns the Bitbucket Cloud UUID of a UUID key; ok is false for a
+// UUID returns the provider UUID of a UUID key; ok is false for a
 // zero or integer key.
 func (k RepositoryKey) UUID() (id uuid.UUID, ok bool) {
 	return k.uuid, k.uuid != uuid.Nil()
@@ -87,7 +87,7 @@ func (k RepositoryKey) IsZero() bool {
 	return k == RepositoryKey{}
 }
 
-// IsUUID reports whether the key is a Bitbucket Cloud UUID.
+// IsUUID reports whether the key is a provider UUID.
 func (k RepositoryKey) IsUUID() bool {
 	return k.uuid != uuid.Nil()
 }

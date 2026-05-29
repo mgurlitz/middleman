@@ -9,8 +9,8 @@ provider interfaces, and the checklist for adding a new provider, read
 
 Repository identity is `(platform, platform_host, key)`. The key is one
 `platform.RepositoryKey`: a positive integer repository ID for every provider,
-including Bitbucket Data Center, or the repository UUID for Bitbucket Cloud,
-which has no integer ID (`platform/repository_key.go::RepositoryKey`,
+including Bitbucket Data Center, or the repository UUID for Bitbucket Cloud
+and Azure DevOps, which have no integer repository ID (`platform/repository_key.go::RepositoryKey`,
 `platform/repository_identity.go::RepositoryIdentity.Valid`). GitHub's
 `node_id` is never identity. Owner, name, and `repo_path` are the current route.
 
@@ -19,6 +19,9 @@ which has no integer ID (`platform/repository_key.go::RepositoryKey`,
   never a bare integer ID or a separate UUID field. Compare keys with `==`,
   test verification with `IsZero`, and format them with `String`; the key's
   fields are unexported so no code can check half of it (maintainer decision).
+- Azure DevOps reuses the UUID encoding named `bitbucket_repository_uuid`; do not
+  hash its native UUID into an integer or add a second key representation
+  (`platform/repository_identity.go::RepositoryIdentity.Valid`).
 - Flat `platform_repo_id` and `bitbucket_repository_uuid` values exist only in
   encodings: SQL columns (`internal/db/repository_key.go`), JSON bodies,
   federation payloads, and the config file. Decode with

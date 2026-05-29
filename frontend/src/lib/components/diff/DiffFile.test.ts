@@ -292,6 +292,11 @@ function renderDiffFile(
     diffHeadSHA?: string;
     nativeMultilineRanges?: boolean;
     owner?: string;
+    provider?: string;
+    platformHost?: string;
+    name?: string;
+    repoPath?: string;
+    number?: number;
     draftComments?: DiffReviewDraftComment[];
     reviewThreads?: ReviewThread[];
     createComment?: (body: string, range: DiffReviewLineRange) => Promise<boolean>;
@@ -328,12 +333,12 @@ function renderDiffFile(
       file,
       previousFilePath: options.previousFilePath,
       nextFilePath: options.nextFilePath,
-      provider: "github",
-      platformHost: "github.com",
+      provider: options.provider ?? "github",
+      platformHost: options.platformHost ?? "github.com",
       owner,
-      name: "n",
-      repoPath: `${owner}/n`,
-      number: 1,
+      name: options.name ?? "n",
+      repoPath: options.repoPath ?? `${owner}/n`,
+      number: options.number ?? 1,
       ...(options.richPreviewEnabled !== undefined && {
         richPreviewEnabled: options.richPreviewEnabled,
       }),
@@ -2376,7 +2381,7 @@ describe("DiffFile", () => {
       provider: "github",
       owner,
       name: "n",
-      repoPath: "o/n",
+      repoPath: `${owner}/n`,
       number: 1,
       reviewEnabled: false,
       diffHeadSHA: "diff-head",
@@ -2389,7 +2394,7 @@ describe("DiffFile", () => {
       provider: "github",
       owner,
       name: "n",
-      repoPath: "o/n",
+      repoPath: `${owner}/n`,
       number: 1,
       reviewEnabled: true,
       diffHeadSHA: "new-diff-head",
@@ -2402,7 +2407,7 @@ describe("DiffFile", () => {
       provider: "github",
       owner,
       name: "n",
-      repoPath: "o/n",
+      repoPath: `${owner}/n`,
       number: 1,
       reviewEnabled: true,
       diffHeadSHA: "another-diff-head",
@@ -2809,5 +2814,21 @@ describe("DiffFile", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Previous file" }));
     expect(diff.getScrollTarget()).toEqual({ path: "src/before.ts" });
     expect(screen.getByRole("button", { name: "Collapse file" }).getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("renders Azure DevOps file links in the header", () => {
+    renderDiffFile(makeFile({ path: "src/foo.ts" }), {
+      provider: "azure_devops",
+      platformHost: "dev.azure.com",
+      owner: "AcmeOrg/Payments",
+      name: "Service",
+      repoPath: "AcmeOrg/Payments/Service",
+      number: 17,
+    });
+
+    const link = screen.getByTitle("Open in provider");
+    expect(link.getAttribute("href")).toBe(
+      "https://dev.azure.com/AcmeOrg/Payments/_git/Service/pullrequest/17?_a=files&path=%2Fsrc%2Ffoo.ts",
+    );
   });
 });

@@ -11,6 +11,7 @@
   import XIcon from "@lucide/svelte/icons/x";
   import { onDestroy, untrack } from "svelte";
   import { slide } from "svelte/transition";
+  import { providerCommentURL, type TimelineItemType } from "../../api/provider-links.js";
   import type { IssueEvent, PREvent } from "../../api/types.js";
   import type {
     DetailActivityViewMode,
@@ -68,7 +69,7 @@
     repoName?: string;
     repoPath?: string | undefined;
     number?: number | undefined;
-    itemType?: "pull" | "issue" | undefined;
+    itemType?: TimelineItemType | undefined;
     currentHeadSHA?: string | undefined;
     canResolveReviewThreads?: boolean;
     canReplyToThreads?: boolean;
@@ -206,6 +207,7 @@
     review: "Review",
     commit: "Commit",
     force_push: "Force-pushed",
+    iteration: "Iteration",
     review_comment: "Review Comment",
     assigned: "Assigned",
     unassigned: "Unassigned",
@@ -228,6 +230,8 @@
         return "success";
       case "force_push":
         return "danger";
+      case "iteration":
+        return "warning";
       default:
         return "muted";
     }
@@ -1528,6 +1532,17 @@
     startReply(entry);
   }
 
+  function directEventURL(event: PREvent | IssueEvent): string | null {
+    if (event.DirectURL) return event.DirectURL;
+    if (!provider || !repoOwner || !repoName || !repoPath) return null;
+    return providerCommentURL(
+      { provider, platformHost, owner: repoOwner, name: repoName, repoPath },
+      itemType,
+      number,
+      event,
+    );
+  }
+
   function handleInlineReplyBodyKeydown(event: KeyboardEvent, entry: TimelineEntry | undefined): void {
     if (!entry) return;
     if (!(event.target instanceof Element)) return;
@@ -1564,12 +1579,13 @@
     </IconButton>
   {/if}
   {@render deleteAction(event)}
-  {#if event.DirectURL}
+  {@const directURL = directEventURL(event)}
+  {#if directURL}
     {@const directCopyID = directLinkCopyID(event)}
     <IconButton
       size="sm"
       tone={copiedId === directCopyID ? "success" : "neutral"}
-      onclick={() => copyText(directCopyID, event.DirectURL)}
+      onclick={() => copyText(directCopyID, directURL)}
       ariaLabel={copiedId === directCopyID ? "Copied" : "Copy direct link"}
     >
       {#if copiedId === directCopyID}
@@ -2147,7 +2163,7 @@
             {#snippet actions()}
               {@render eventActions(event, undefined)}
             {/snippet}
-            {#if event.Summary && (event.EventType === "commit" || event.EventType === "force_push")}
+            {#if event.Summary && (event.EventType === "commit" || event.EventType === "force_push" || event.EventType === "iteration")}
               <p class="event-summary">{event.Summary}</p>
             {/if}
             {#if hiddenState}

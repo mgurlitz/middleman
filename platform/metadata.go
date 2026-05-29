@@ -43,6 +43,12 @@ var builtInMetadata = map[Kind]Metadata{
 		DefaultHost:      DefaultGiteaHost,
 		AllowNestedOwner: false,
 	},
+	KindAzureDevOps: {
+		Kind:             KindAzureDevOps,
+		Label:            "Azure DevOps",
+		DefaultHost:      DefaultAzureDevOpsHost,
+		AllowNestedOwner: true,
+	},
 }
 
 func NormalizeKind(raw string) (Kind, error) {
@@ -59,7 +65,9 @@ func NormalizeKind(raw string) (Kind, error) {
 		return KindForgejo, nil
 	case "tea":
 		return KindGitea, nil
-	case KindGitHub, KindGitLab, KindForgejo, KindGitea, KindBitbucket:
+	case "ado", "azuredevops", "azure-devops":
+		return KindAzureDevOps, nil
+	case KindGitHub, KindGitLab, KindForgejo, KindGitea, KindBitbucket, KindAzureDevOps:
 		return kind, nil
 	}
 	if !validKindRe.MatchString(string(kind)) {

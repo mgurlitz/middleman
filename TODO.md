@@ -1,6 +1,6 @@
 - [x] Confirm upstream target: origin/main at 07b7bae0, after v0.3.0.
 - [x] Replay Nix build shell with upstream's Go 1.27 requirement.
-- [ ] Replay Azure DevOps provider support against upstream architecture.
+- [x] Replay Azure DevOps provider support against upstream architecture.
 - [ ] Replay Windows arm64 release support against current release workflow.
 - [ ] Replay explicit telemetry opt-in against current telemetry implementation.
 - [ ] Replay Azure DevOps approval timeline events.
@@ -8,4 +8,5 @@
 - [ ] Replay ADO branch licensing documentation.
 - [ ] Replay Azure clone token rotation and Windows Git isolation fixes.
 - [ ] Replay final Azure DevOps runtime integration fixes.
+- [ ] Verify preservation of existing Azure UUID records across upstream schema upgrades.
 - [ ] Run affected backend/frontend tests and complete the rebase.

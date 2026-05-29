@@ -1,11 +1,13 @@
 package gitclone
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/tokenauth"
 )
 
 func TestValidateRemoteURLHostRejectsMismatchedHTTPSHost(t *testing.T) {
@@ -69,6 +71,34 @@ func TestValidateRemoteURLIdentityAcceptsFileURL(t *testing.T) {
 	err := validateRemoteURLIdentity("github",
 		"github.com", "acme", "widget",
 		"file:///C:/Users/RUNNER~1/AppData/Local/Temp/Test/remote/widget",
+	)
+
+	require.NoError(t, err)
+}
+
+type azureTestTokenSource string
+
+func (s azureTestTokenSource) Token(context.Context) (string, error) { return string(s), nil }
+func (azureTestTokenSource) Invalidate(string)                       {}
+func (azureTestTokenSource) Descriptor() tokenauth.Descriptor {
+	return tokenauth.Descriptor{Key: tokenauth.Key{Platform: "azure_devops", Host: "dev.azure.com"}}
+}
+
+func TestAzureDevOpsGitRunnerUsesScopedBearerHeader(t *testing.T) {
+	runner, _, err := New(t.TempDir(), nil).gitRunnerAuthed(
+		t.Context(), azureTestTokenSource("azure-token"), "azure_devops", "dev.azure.com", false,
+	)
+	require.NoError(t, err)
+	require.NotEmpty(t, runner.Config)
+	config := runner.Config[len(runner.Config)-1]
+	assert.Equal(t, "http.https://dev.azure.com/.extraheader", config.Key)
+	assert.Equal(t, "Authorization: Bearer azure-token", config.Value)
+}
+
+func TestValidateRemoteURLIdentityAcceptsAzureDevOpsRepoPath(t *testing.T) {
+	err := validateRemoteURLIdentity("azure_devops",
+		"dev.azure.com", "AcmeOrg/Payments", "Service",
+		"https://dev.azure.com/AcmeOrg/Payments/_git/Service",
 	)
 
 	require.NoError(t, err)

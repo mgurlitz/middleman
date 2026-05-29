@@ -1587,6 +1587,9 @@ func (m *Manager) gitRunnerAuthed(
 		return runner, "", ErrCredentialUnavailable
 	}
 	if token != "" {
+		if platform == string(providerplatform.KindAzureDevOps) {
+			return runner.WithConfig("http.https://"+host+"/.extraheader", "Authorization: Bearer "+token), token, nil
+		}
 		// GitHub's smart HTTP endpoint expects Basic auth credentials.
 		username, password := "x-access-token", token
 		if platform == string(providerplatform.KindBitbucket) && host == providerplatform.DefaultBitbucketHost {

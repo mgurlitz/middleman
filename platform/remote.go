@@ -36,6 +36,15 @@ func ValidateRemoteIdentity(ref RepoRef, remoteURL string) error {
 }
 
 func repositoryRemote(kind Kind, host, remoteURL string) string {
+	if kind == KindAzureDevOps {
+		u, err := url.Parse(remoteURL)
+		if err == nil && u.Host != "" {
+			u.Path = strings.Replace(u.Path, "/_git/", "/", 1)
+			u.RawPath = ""
+			return u.String()
+		}
+		return remoteURL
+	}
 	if kind != KindBitbucket || strings.EqualFold(host, DefaultBitbucketHost) {
 		return remoteURL
 	}

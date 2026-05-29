@@ -37,6 +37,14 @@ func TestProviderMetadataForBuiltIns(t *testing.T) {
 	assert.Equal(DefaultGiteaHost, gitea.DefaultHost)
 	assert.False(gitea.AllowNestedOwner)
 	assert.False(gitea.LowercaseRepoNames)
+
+	azureDevOps, ok := MetadataFor(KindAzureDevOps)
+	require.True(ok)
+	assert.Equal(KindAzureDevOps, azureDevOps.Kind)
+	assert.Equal("Azure DevOps", azureDevOps.Label)
+	assert.Equal(DefaultAzureDevOpsHost, azureDevOps.DefaultHost)
+	assert.True(azureDevOps.AllowNestedOwner)
+	assert.False(azureDevOps.LowercaseRepoNames)
 }
 
 func TestNormalizeKindAllowsFutureProviderKinds(t *testing.T) {
@@ -66,6 +74,14 @@ func TestNormalizeKindAllowsFutureProviderKinds(t *testing.T) {
 	gitea, err := NormalizeKind("Gitea")
 	require.NoError(err)
 	assert.Equal(KindGitea, gitea)
+
+	ado, err := NormalizeKind("ADO")
+	require.NoError(err)
+	assert.Equal(KindAzureDevOps, ado)
+
+	azureDevOps, err := NormalizeKind("azure-devops")
+	require.NoError(err)
+	assert.Equal(KindAzureDevOps, azureDevOps)
 }
 
 func TestNormalizeKindCanonicalizesBuiltInShorthands(t *testing.T) {

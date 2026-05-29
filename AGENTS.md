@@ -11,7 +11,7 @@ development commands.
 
 ## Provider Support
 
-kenn-forge supports GitHub, GitLab, Forgejo, Gitea, and Bitbucket Cloud/Data Center. This is the single
+kenn-forge supports GitHub, GitLab, Forgejo, Gitea, Bitbucket Cloud/Data Center, and Azure DevOps. This is the single
 canonical provider list; `gitealike` is the shared Forgejo/Gitea adapter.
 Provider-backed features must work across every supported provider within its
 declared capabilities and preserve provider-verified stable repository identity;

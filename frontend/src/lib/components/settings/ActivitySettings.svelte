@@ -41,6 +41,8 @@
       { value: "review", label: "Reviews" },
       { value: "commit", label: "Commits" },
       { value: "force_push", label: "Force pushes" },
+      { value: "iteration", label: "Iterations" },
+      { value: "merged", label: "Merges" },
     ] },
   ] as const;
 

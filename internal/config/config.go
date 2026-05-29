@@ -1769,7 +1769,7 @@ func (c *Config) validate() error {
 		c.Activity.ItemTypes = []string{"pr", "issue"}
 	}
 	if c.Activity.EventTypes == nil {
-		c.Activity.EventTypes = []string{"comment", "review", "commit", "force_push"}
+		c.Activity.EventTypes = []string{"comment", "review", "commit", "force_push", "iteration", "merged"}
 	}
 	for _, itemType := range c.Activity.ItemTypes {
 		if itemType != "pr" && itemType != "issue" {
@@ -1777,7 +1777,7 @@ func (c *Config) validate() error {
 		}
 	}
 	for _, eventType := range c.Activity.EventTypes {
-		if !slices.Contains([]string{"comment", "review", "commit", "force_push"}, eventType) {
+		if !slices.Contains([]string{"comment", "review", "commit", "force_push", "iteration", "merged"}, eventType) {
 			return fmt.Errorf("config: invalid activity event_types value %q", eventType)
 		}
 	}

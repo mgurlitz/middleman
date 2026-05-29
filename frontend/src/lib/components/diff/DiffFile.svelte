@@ -26,6 +26,7 @@
     type ReviewThreadCardPlacement,
   } from "./review-thread-context.js";
   import PierreFileDiff from "./PierreFileDiff.svelte";
+  import { providerDiffFileURL } from "../../api/provider-links.js";
 
   const stores = getStores();
   const diffStore = stores.diff;
@@ -92,6 +93,11 @@
     reviewThreads.filter((thread) => threadMatchesFile(thread)),
   );
   const fileHunks = $derived(file.hunks ?? []);
+  const providerFileURL = $derived(providerDiffFileURL(
+    { provider, platformHost, owner, name, repoPath },
+    number,
+    file,
+  ));
 
   // Track viewport visibility so off-screen files skip expensive tokenization
   // on whitespace toggles and theme switches. Starts false so the initial
@@ -648,6 +654,17 @@
         dimZeros
       />
     </span>
+    {#if providerFileURL}
+      <a
+        class="file-provider-link"
+        href={providerFileURL}
+        target="_blank"
+        rel="noopener noreferrer"
+        title="Open in provider"
+      >
+        Open
+      </a>
+    {/if}
   </div>
   {#if !collapsed}
     <div class="file-content">
@@ -790,6 +807,17 @@
   .file-navigation {
     display: flex;
     flex-shrink: 0;
+  }
+
+  .file-provider-link {
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+    text-decoration: none;
+  }
+
+  .file-provider-link:hover {
+    color: var(--text-primary);
+    text-decoration: underline;
   }
 
   .file-content {

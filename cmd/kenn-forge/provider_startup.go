@@ -14,6 +14,7 @@ import (
 	"go.kenn.io/forge/internal/devbox"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/github"
+	azuredevopsclient "go.kenn.io/forge/internal/platform/azuredevops"
 	"go.kenn.io/forge/internal/server/syncevents"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
@@ -97,6 +98,25 @@ func (s optionalMutationTokenSource) Token(ctx context.Context) (string, error) 
 	return token, err
 }
 
+type azureCLITokenSource struct {
+	source     azuredevopsclient.TokenSource
+	descriptor tokenauth.Descriptor
+}
+
+func (s *azureCLITokenSource) Token(ctx context.Context) (string, error) {
+	return s.source.Token(ctx)
+}
+
+func (s *azureCLITokenSource) Invalidate(_ string) {
+	if invalidator, ok := s.source.(interface{ Invalidate() }); ok {
+		invalidator.Invalidate()
+	}
+}
+
+func (s *azureCLITokenSource) Descriptor() tokenauth.Descriptor {
+	return s.descriptor
+}
+
 type identityBoundMutationTokenSource struct {
 	tokenauth.Source
 	writeIdentity github.IdentityKey
@@ -178,7 +198,10 @@ func buildGitStartup(cfg *config.Config, set *tokenauth.SourceSet) (gitStartup, 
 	}
 	for _, plan := range cfg.ProviderTokenSources() {
 		desc := plan.Descriptor
-		source := set.Upsert(desc)
+		var source tokenauth.Source = set.Upsert(desc)
+		if desc.Key.Platform == string(platform.KindAzureDevOps) {
+			source = &azureCLITokenSource{source: azuredevopsclient.NewCLITokenSource(), descriptor: desc}
+		}
 		hostKey := tokenauth.Key{Platform: desc.Key.Platform, Host: desc.Key.Host}
 		if startup.cloneSources[hostKey] == nil {
 			startup.cloneSources[hostKey] = source
@@ -421,6 +444,17 @@ func defaultProviderFactories() map[string]providerFactory {
 			}
 			return providerFactoryOutput{provider: client}, nil
 		},
+		string(platform.KindAzureDevOps): func(_ context.Context, input providerFactoryInput) (providerFactoryOutput, error) {
+			client, err := azuredevopsclient.NewClient(
+				input.host,
+				azuredevopsclient.WithTokenSource(input.tokenSource),
+				azuredevopsclient.WithRateTracker(input.rateTracker),
+			)
+			if err != nil {
+				return providerFactoryOutput{}, err
+			}
+			return providerFactoryOutput{provider: client}, nil
+		},
 	}
 }
 
@@ -505,7 +539,10 @@ func providerTokenSources(
 				}
 			}
 		}
-		src := set.Upsert(desc)
+		var src tokenauth.Source = set.Upsert(desc)
+		if desc.Key.Platform == string(platform.KindAzureDevOps) {
+			src = &azureCLITokenSource{source: azuredevopsclient.NewCLITokenSource(), descriptor: desc}
+		}
 		if resolve {
 			if _, err := src.Token(tokenCtx); err != nil {
 				if plan.ArchiveOnly && errors.Is(err, tokenauth.ErrMissingToken) {
@@ -737,6 +774,12 @@ func buildProviderControlPlane(
 	githubHosts := make(map[string]struct{}, len(providerSources))
 	for key, tokenSource := range providerSources {
 		platformName, host := splitProviderHostKey(key)
+		if platformName == string(platform.KindAzureDevOps) {
+			tokenSource = &azureCLITokenSource{
+				source:     azuredevopsclient.NewCLITokenSource(),
+				descriptor: tokenSource.Descriptor(),
+			}
+		}
 		rateKey := github.RateBucketKey(platformName, host, "host")
 		routedGitHub := platformName == string(platform.KindGitHub) && startup.githubClients[host] != nil
 		if !routedGitHub {

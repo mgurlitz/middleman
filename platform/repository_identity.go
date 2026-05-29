@@ -35,17 +35,16 @@ func (r RepositoryIdentity) Canonical() RepositoryIdentity {
 }
 
 // Valid reports whether the identity is complete: Bitbucket Cloud needs a
-// UUID key, and every other provider an integer key.
+// UUID key, as does Azure DevOps; every other provider needs an integer key.
 func (r RepositoryIdentity) Valid() bool {
 	r = r.Canonical()
 	if r.Provider == "" || r.PlatformHost == "" || r.Key.IsZero() {
 		return false
 	}
-	return r.Key.IsUUID() == IsBitbucketCloud(r.Provider, r.PlatformHost)
+	return r.Key.IsUUID() == (IsBitbucketCloud(r.Provider, r.PlatformHost) || r.Provider == string(KindAzureDevOps))
 }
 
-// IsBitbucketCloud reports whether provider and host name Bitbucket Cloud,
-// the one provider whose repository key is a UUID.
+// IsBitbucketCloud reports whether provider and host name Bitbucket Cloud.
 func IsBitbucketCloud(provider, host string) bool {
 	return strings.EqualFold(strings.TrimSpace(provider), string(KindBitbucket)) &&
 		strings.EqualFold(strings.TrimSpace(host), DefaultBitbucketHost)

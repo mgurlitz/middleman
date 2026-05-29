@@ -1,4 +1,5 @@
 import type { PREvent } from "../../api/types.js";
+import { isBotAuthor } from "../../utils/bot-authors.js";
 
 export interface PRTimelineFilterState {
   showMessages: boolean;
@@ -22,12 +23,7 @@ export const DEFAULT_PR_TIMELINE_FILTER: PRTimelineFilterState = {
   hideBots: false,
 };
 
-const BOT_SUFFIXES = ["[bot]", "-bot", "bot"];
-
-export function isBotAuthor(author: string): boolean {
-  const lower = author.toLowerCase();
-  return BOT_SUFFIXES.some((suffix) => lower.endsWith(suffix));
-}
+export { isBotAuthor };
 
 function eventSortValue(event: PREvent): number {
   const timestamp = Date.parse(event.CreatedAt);
