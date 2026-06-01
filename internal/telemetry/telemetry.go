@@ -66,7 +66,12 @@ type Options struct {
 }
 
 func EnabledFromEnv() bool {
-	return strings.TrimSpace(os.Getenv(EnabledEnv)) != "0"
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(EnabledEnv))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func EventAllowed(event string) bool {

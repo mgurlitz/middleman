@@ -230,13 +230,13 @@ stacks. Mid-stack merges stay blocked by default.
 
 ## Telemetry
 
-kenn-forge sends limited anonymous telemetry by default: daemon activity, app
-view names, version, commit, OS and architecture, and an anonymous install ID.
-It does not send repository names, item content, tokens, usernames, hostnames,
-or paths.
-
-Disable telemetry with:
+Telemetry is disabled by default. To opt in to limited anonymous telemetry,
+start kenn-forge with:
 
 ```sh
-TELEMETRY_ENABLED=0 kenn-forge
+TELEMETRY_ENABLED=1 kenn-forge
 ```
+
+Opt-in telemetry includes daemon activity, app view names, version, commit, OS
+and architecture, and an anonymous install ID. It does not send repository
+names, item content, tokens, usernames, hostnames, or paths.
