@@ -263,8 +263,8 @@ items, write mutations, or clone-backed diff/workspace flows.
 
 ## Telemetry
 
-Middleman sends limited anonymous telemetry to PostHog: `server_started` with repo count and `app_loaded` with view name, plus version, commit, OS/arch, and an anonymous install ID.
-It does not send repo names, PR/issue content, provider tokens, usernames, or IP geolocation; set `TELEMETRY_ENABLED=0` to disable it.
+Telemetry is disabled by default. If you opt in with `TELEMETRY_ENABLED=1`, middleman sends limited anonymous telemetry to PostHog: `server_started` with repo count and `app_loaded` with view name, plus version, commit, OS/arch, and an anonymous install ID.
+It does not send repo names, PR/issue content, provider tokens, usernames, or IP geolocation.
 
 ## Embedding
 
