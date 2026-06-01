@@ -631,7 +631,8 @@ stacks. Mid-stack merges stay blocked by default.
 
 ## Telemetry
 
-Forge sends limited anonymous telemetry by default: daemon activity, an app
+Telemetry is disabled by default. If explicitly enabled, Forge sends limited
+anonymous telemetry: daemon activity, an app
 open about once a day per browser, which screens were opened (each counted once
 per installation per UTC day), version, commit, OS and architecture, and an
 anonymous install ID. The browser reports app opens to the daemon, never to the
@@ -651,11 +652,9 @@ file beside the database. Keep that file to retain daily counts across restarts.
 It does not send repository names, item content, tokens, usernames, hostnames,
 or paths.
 
-Disable telemetry with:
-
-```sh
-TELEMETRY_ENABLED=0 kenn-forge daemon start
-```
+Opt in with `TELEMETRY_ENABLED=1` or `KENN_FORGE_TELEMETRY_ENABLED=1` in the
+server's environment. Setting either variable to `0` disables telemetry,
+even when the other opts in.
 
 ## Container startup
 

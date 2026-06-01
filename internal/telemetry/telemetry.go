@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -85,11 +86,19 @@ var newKitReporter = func(opts posthog.Options, options ...posthog.Option) (Clie
 	return posthog.NewReporter(opts, options...)
 }
 
-// EnabledFromEnv reports whether the environment allows telemetry. Kit honors
-// both the documented generic TELEMETRY_ENABLED=0 opt-out and the prefixed
-// KENN_FORGE_TELEMETRY_ENABLED=0 one.
+// EnabledFromEnv requires explicit opt-in and preserves kit's process and
+// environment opt-outs. Either opt-out overrides an opt-in.
 func EnabledFromEnv() bool {
-	return posthog.EnabledFromEnv(envPrefix)
+	optedIn := func(name string) bool {
+		switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
+		case "1", "true", "yes", "on":
+			return true
+		default:
+			return false
+		}
+	}
+	return posthog.EnabledFromEnv(envPrefix) &&
+		(optedIn(EnabledEnv) || optedIn(posthog.PrefixedEnabledEnv(envPrefix)))
 }
 
 func EventAllowed(event string) bool {

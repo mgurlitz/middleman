@@ -3,6 +3,9 @@
 - Startup liveness and ready health probes expose the same running build identity
   without a workspace bearer. Builds without VCS metadata must stamp the full
   commit (`internal/server/routepolicy/health_routes.go::HealthyResponse`).
+- Telemetry requires explicit environment opt-in; either generic or prefixed
+  opt-out vetoes it, including browser-originated events
+  (`internal/telemetry/telemetry.go::EnabledFromEnv`).
 - Screen telemetry uses Kit's durable claims per installation and UTC day;
   preserve existing claims during upgrades
   (`internal/telemetry/daily.go::initializeDailyClaims`).
