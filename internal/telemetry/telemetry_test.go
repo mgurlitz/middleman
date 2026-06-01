@@ -1,6 +1,7 @@
 package telemetry
 
 import (
+	"os"
 	"runtime"
 	"testing"
 
@@ -20,6 +21,67 @@ func (f *fakePostHogClient) Enqueue(message posthog.Message) error {
 }
 
 func (f *fakePostHogClient) Close() error { return nil }
+
+func TestEnabledFromEnv(t *testing.T) {
+	assert := Assert.New(t)
+
+	original, hadOriginal := os.LookupEnv(EnabledEnv)
+	t.Cleanup(func() {
+		if hadOriginal {
+			require.NoError(t, os.Setenv(EnabledEnv, original))
+			return
+		}
+		require.NoError(t, os.Unsetenv(EnabledEnv))
+	})
+
+	require.NoError(t, os.Unsetenv(EnabledEnv))
+	assert.False(EnabledFromEnv())
+
+	cases := []struct {
+		name  string
+		value string
+		want  bool
+	}{
+		{name: "one", value: "1", want: true},
+		{name: "true", value: "true", want: true},
+		{name: "yes", value: "yes", want: true},
+		{name: "on", value: "on", want: true},
+		{name: "zero", value: "0", want: false},
+		{name: "empty", value: "", want: false},
+		{name: "other", value: "maybe", want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.NoError(t, os.Setenv(EnabledEnv, tc.value))
+			Assert.Equal(t, tc.want, EnabledFromEnv())
+		})
+	}
+}
+
+func TestNewReporterDisabledByDefaultDoesNotCreateInstallID(t *testing.T) {
+	assert := Assert.New(t)
+	require := require.New(t)
+
+	original, hadOriginal := os.LookupEnv(EnabledEnv)
+	t.Cleanup(func() {
+		if hadOriginal {
+			require.NoError(os.Setenv(EnabledEnv, original))
+			return
+		}
+		require.NoError(os.Unsetenv(EnabledEnv))
+	})
+	require.NoError(os.Unsetenv(EnabledEnv))
+
+	database := dbtest.Open(t)
+
+	reporter, err := NewReporter(Options{Database: database})
+	require.NoError(err)
+
+	assert.False(reporter.Enabled())
+	_, found, err := database.AppMetadataValue(t.Context(), installIDMetadataKey)
+	require.NoError(err)
+	assert.False(found)
+}
 
 func TestNewReporterDisabledByEnvDoesNotCreateInstallID(t *testing.T) {
 	assert := Assert.New(t)
