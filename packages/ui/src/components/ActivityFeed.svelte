@@ -360,6 +360,7 @@
             activity.setHideClosedMerged(
               !activity.getHideClosedMerged(),
             );
+            activity.syncToURL();
           },
         },
         {
@@ -369,6 +370,7 @@
           color: "var(--accent-purple)",
           onSelect: () => {
             activity.setHideBots(!activity.getHideBots());
+            activity.syncToURL();
           },
         },
         {
