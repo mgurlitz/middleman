@@ -547,12 +547,13 @@ describe("Activity preferences after Settings", () => {
   });
 
   it.each(["0", "1"])("restores the time window, view, and hide-closed choice %s on return", (hideClosed) => {
-    navigate(`/?range=90d&view=threaded&hide_closed=${hideClosed}`);
+    navigate(`/?range=90d&view=threaded&hide_closed=${hideClosed}&hide_bots=${hideClosed}`);
     navigate("/settings");
     navigate("/");
     const restored = new URLSearchParams(window.location.search);
     expect(restored.get("range")).toBe("90d");
     expect(restored.get("view")).toBe("threaded");
     expect(restored.get("hide_closed")).toBe(hideClosed);
+    expect(restored.get("hide_bots")).toBe(hideClosed);
   });
 });

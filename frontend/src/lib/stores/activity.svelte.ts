@@ -272,6 +272,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let hideClosedMerged = $state(false);
   let hideClosedMergedOverride: boolean | undefined;
   let hideBots = $state(false);
+  let hideBotsOverride: boolean | undefined;
   let useWorkspaceActivityForRecency = $state(false);
   let hideDefaultBranchActivity = $state(false);
   let enabledItemTypes = $state<Set<ActivityItemType>>(new Set(DEFAULT_ACTIVITY_ITEM_TYPES));
@@ -448,6 +449,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
   function setHideBots(v: boolean): void {
     hideBots = v;
+    hideBotsOverride = v;
+    syncToURL();
     invalidatePagedActivityRequests();
   }
   function setHideDefaultBranchActivity(v: boolean): void {
@@ -1431,6 +1434,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     const hideClosedParam = sp.get("hide_closed");
     hideClosedMergedOverride = hideClosedParam === "1" ? true : hideClosedParam === "0" ? false : undefined;
     if (hideClosedMergedOverride !== undefined) hideClosedMerged = hideClosedMergedOverride;
+    const hideBotsParam = sp.get("hide_bots");
+    hideBotsOverride = hideBotsParam === "1" ? true : hideBotsParam === "0" ? false : undefined;
+    if (hideBotsOverride !== undefined) hideBots = hideBotsOverride;
     applyCollapsedFromURL();
     rebuildFilterTypes();
   }
@@ -1463,6 +1469,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     else sp.delete("author");
     if (hideClosedMergedOverride !== undefined) sp.set("hide_closed", hideClosedMergedOverride ? "1" : "0");
     else sp.delete("hide_closed");
+    if (hideBotsOverride !== undefined) sp.set("hide_bots", hideBotsOverride ? "1" : "0");
+    else sp.delete("hide_bots");
     if (timeRange !== timeRangeDefault || (!defaultsHydrated && (timeRangeSelected || sp.has("range"))))
       sp.set("range", timeRange);
     else sp.delete("range");

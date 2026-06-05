@@ -395,6 +395,7 @@ const RESTORABLE_ACTIVITY_FILTER_PARAMS = [
   "range",
   "view",
   "hide_closed",
+  "hide_bots",
   "rollup_commits",
   "collapsed",
   "search",

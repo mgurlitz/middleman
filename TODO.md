@@ -4,7 +4,7 @@
 - [x] Keep upstream's retired release workflow deleted; the old Windows arm64 matrix patch is obsolete.
 - [x] Replay explicit telemetry opt-in against current telemetry implementation.
 - [x] Replay Azure DevOps approval timeline events.
-- [ ] Reconcile saved Activity filters with upstream's persistence changes.
+- [x] Reconcile saved Activity filters with upstream's persistence changes.
 - [ ] Replay ADO branch licensing documentation.
 - [ ] Replay Azure clone token rotation and Windows Git isolation fixes.
 - [ ] Replay final Azure DevOps runtime integration fixes.

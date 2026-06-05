@@ -59,6 +59,23 @@ function makeStore() {
 }
 
 describe("configured Activity filters", () => {
+  it.each([false, true])(
+    "preserves an explicit bot visibility choice across hydration and remount (hidden: %s)",
+    (hidden) => {
+      const serverDefaults = { ...settings(false), hide_bots: !hidden };
+      const store = makeStore();
+      store.initializeFromMount();
+      store.setHideBots(hidden);
+      store.hydrateDefaults(serverDefaults);
+      expect(store.getHideBots()).toBe(hidden);
+      expect(new URLSearchParams(window.location.search).get("hide_bots")).toBe(hidden ? "1" : "0");
+      const fresh = makeStore();
+      fresh.hydrateDefaults(serverDefaults);
+      fresh.initializeFromMount();
+      expect(fresh.getHideBots()).toBe(hidden);
+    },
+  );
+
   const defaults = () => ({
     ...settings(false),
     item_types: ["issue"],
