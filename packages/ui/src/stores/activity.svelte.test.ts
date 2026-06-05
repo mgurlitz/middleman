@@ -9,12 +9,15 @@ const fakeClient = {
   }),
 } as unknown as Parameters<typeof createActivityStore>[0]["client"];
 
-function settings(collapse: boolean): ActivitySettings {
+function settings(
+  collapse: boolean,
+  overrides: Partial<Pick<ActivitySettings, "hide_closed" | "hide_bots">> = {},
+): ActivitySettings {
   return {
     view_mode: "threaded",
     time_range: "7d",
-    hide_closed: false,
-    hide_bots: false,
+    hide_closed: overrides.hide_closed ?? false,
+    hide_bots: overrides.hide_bots ?? false,
     collapse_threads: collapse,
   };
 }
@@ -127,7 +130,7 @@ describe("buildActivityFilterTypes", () => {
   });
 
   it("drops default-branch commits when the commit event is deselected", () => {
-    const enabled = new Set(["comment", "review", "force_push"]);
+    const enabled = new Set(["comment", "review", "force_push", "iteration", "merged"]);
     expect(buildActivityFilterTypes("all", enabled, false)).toEqual([
       "new_pr",
       "new_issue",
@@ -135,11 +138,13 @@ describe("buildActivityFilterTypes", () => {
       "comment",
       "review",
       "force_push",
+      "iteration",
+      "merged",
     ]);
   });
 
   it("drops default-branch force pushes when the force-push event is deselected", () => {
-    const enabled = new Set(["comment", "review", "commit"]);
+    const enabled = new Set(["comment", "review", "commit", "iteration", "merged"]);
     expect(buildActivityFilterTypes("all", enabled, false)).toEqual([
       "new_pr",
       "new_issue",
@@ -147,6 +152,8 @@ describe("buildActivityFilterTypes", () => {
       "comment",
       "review",
       "commit",
+      "iteration",
+      "merged",
     ]);
   });
 
@@ -158,6 +165,8 @@ describe("buildActivityFilterTypes", () => {
       "review",
       "commit",
       "force_push",
+      "iteration",
+      "merged",
     ]);
   });
 
@@ -168,6 +177,8 @@ describe("buildActivityFilterTypes", () => {
       "review",
       "commit",
       "force_push",
+      "iteration",
+      "merged",
     ]);
     expect(buildActivityFilterTypes("issues", allEvents, false)).toEqual([
       "new_issue",
@@ -175,6 +186,8 @@ describe("buildActivityFilterTypes", () => {
       "review",
       "commit",
       "force_push",
+      "iteration",
+      "merged",
     ]);
   });
 });
@@ -205,7 +218,7 @@ describe("activity store URL hydration", () => {
     window.history.replaceState(
       null,
       "",
-      "/?types=new_pr,new_issue,default_branch_commit,default_branch_force_push,comment,review,commit,force_push",
+      "/?types=new_pr,new_issue,default_branch_commit,default_branch_force_push,comment,review,commit,force_push,iteration,merged",
     );
     const s = makeStore();
     s.initializeFromMount();
@@ -214,7 +227,7 @@ describe("activity store URL hydration", () => {
   });
 });
 
-describe("activity store default-branch visibility", () => {
+describe("activity store visibility persistence", () => {
   it("shows default-branch activity by default and persists the hide flag", () => {
     const s = makeStore();
     s.initializeFromMount();
@@ -231,5 +244,73 @@ describe("activity store default-branch visibility", () => {
     next.setHideDefaultBranchActivity(false);
     next.syncToURL();
     expect(new URLSearchParams(window.location.search).has("hide_branch")).toBe(false);
+  });
+
+  it("persists hide closed/merged across reloads", () => {
+    const s = makeStore();
+    s.initializeFromMount();
+    expect(s.getHideClosedMerged()).toBe(false);
+
+    s.setHideClosedMerged(true);
+    s.syncToURL();
+    expect(new URLSearchParams(window.location.search).get("hide_closed")).toBe("1");
+
+    const next = makeStore();
+    next.initializeFromMount();
+    expect(next.getHideClosedMerged()).toBe(true);
+
+    next.setHideClosedMerged(false);
+    next.syncToURL();
+    expect(new URLSearchParams(window.location.search).has("hide_closed")).toBe(false);
+  });
+
+  it("persists hide closed/merged false overrides when the default is true", () => {
+    const s = makeStore();
+    s.hydrateDefaults(settings(false, { hide_closed: true }));
+    s.initializeFromMount();
+    expect(s.getHideClosedMerged()).toBe(true);
+
+    s.setHideClosedMerged(false);
+    s.syncToURL();
+    expect(new URLSearchParams(window.location.search).get("hide_closed")).toBe("0");
+
+    const next = makeStore();
+    next.hydrateDefaults(settings(false, { hide_closed: true }));
+    next.initializeFromMount();
+    expect(next.getHideClosedMerged()).toBe(false);
+  });
+
+  it("persists hide bots across reloads", () => {
+    const s = makeStore();
+    s.initializeFromMount();
+    expect(s.getHideBots()).toBe(false);
+
+    s.setHideBots(true);
+    s.syncToURL();
+    expect(new URLSearchParams(window.location.search).get("hide_bots")).toBe("1");
+
+    const next = makeStore();
+    next.initializeFromMount();
+    expect(next.getHideBots()).toBe(true);
+
+    next.setHideBots(false);
+    next.syncToURL();
+    expect(new URLSearchParams(window.location.search).has("hide_bots")).toBe(false);
+  });
+
+  it("persists hide bots false overrides when the default is true", () => {
+    const s = makeStore();
+    s.hydrateDefaults(settings(false, { hide_bots: true }));
+    s.initializeFromMount();
+    expect(s.getHideBots()).toBe(true);
+
+    s.setHideBots(false);
+    s.syncToURL();
+    expect(new URLSearchParams(window.location.search).get("hide_bots")).toBe("0");
+
+    const next = makeStore();
+    next.hydrateDefaults(settings(false, { hide_bots: true }));
+    next.initializeFromMount();
+    expect(next.getHideBots()).toBe(false);
   });
 });

@@ -93,6 +93,32 @@ test.describe("activity feed filters", () => {
     await expect(page.locator(".state-badge.state-merged")).toHaveCount(0);
   });
 
+  test("hide closed/merged persists across reloads", async ({ page }) => {
+    await expect(
+      page.locator(".state-badge.state-closed, .state-badge.state-merged")
+        .first(),
+    ).toBeVisible();
+
+    await selectActivityFilterItem(page, "Hide closed/merged");
+
+    await expect(
+      page.locator(".state-badge.state-closed"),
+    ).toHaveCount(0, { timeout: 5_000 });
+    await expect(
+      page.locator(".state-badge.state-merged"),
+    ).toHaveCount(0);
+
+    await page.reload();
+    await waitForTable(page);
+
+    await expect(
+      page.locator(".state-badge.state-closed"),
+    ).toHaveCount(0, { timeout: 5_000 });
+    await expect(
+      page.locator(".state-badge.state-merged"),
+    ).toHaveCount(0);
+  });
+
   test("hide bots removes bot-authored items", async ({ page }) => {
     const botCells = page.locator(".activity-row .col-author", {
       hasText: "dependabot[bot]",
