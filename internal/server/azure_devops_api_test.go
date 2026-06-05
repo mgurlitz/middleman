@@ -143,6 +143,13 @@ func TestAPIAzureDevOpsReadOnlySyncPersistsThroughServer(t *testing.T) {
 						"content": "Looks good from Azure DevOps",
 						"publishedDate": "2026-05-21T12:05:00Z",
 						"author": {"displayName": "Grace Hopper"}
+					}, {
+						"id": 1002,
+						"parentCommentId": 0,
+						"commentType": "system",
+						"content": "Grace Hopper approved this pull request.",
+						"publishedDate": "2026-05-21T12:07:00Z",
+						"author": {"displayName": "Grace Hopper"}
 					}]
 				}]
 			}`))
@@ -250,13 +257,16 @@ func TestAPIAzureDevOpsReadOnlySyncPersistsThroughServer(t *testing.T) {
 	var detail pullapi.MergeRequestDetailResponse
 	require.NoError(json.NewDecoder(rawDetail.Body).Decode(&detail))
 	require.NotNil(detail.MergeRequest)
-	require.Len(detail.Events, 3)
-	assert.Equal("iteration", detail.Events[0].EventType)
-	assert.Equal("Iteration 2", detail.Events[0].Summary)
-	assert.Equal("issue_comment", detail.Events[1].EventType)
-	assert.Equal("Looks good from Azure DevOps", detail.Events[1].Body)
-	assert.Equal("iteration", detail.Events[2].EventType)
-	assert.Equal("Iteration 1", detail.Events[2].Summary)
+	require.Len(detail.Events, 4)
+	assert.Equal("approval", detail.Events[0].EventType)
+	assert.Equal("approved this pull request", detail.Events[0].Summary)
+	assert.Equal("Grace Hopper", detail.Events[0].Author)
+	assert.Equal("iteration", detail.Events[1].EventType)
+	assert.Equal("Iteration 2", detail.Events[1].Summary)
+	assert.Equal("issue_comment", detail.Events[2].EventType)
+	assert.Equal("Looks good from Azure DevOps", detail.Events[2].Body)
+	assert.Equal("iteration", detail.Events[3].EventType)
+	assert.Equal("Iteration 1", detail.Events[3].Summary)
 	assert.Equal(1, detail.MergeRequest.CommentCount)
 	assert.Equal(now, detail.MergeRequest.LastActivityAt)
 	assert.Equal(headSHA, detail.DiffHeadSHA)
@@ -266,6 +276,16 @@ func TestAPIAzureDevOpsReadOnlySyncPersistsThroughServer(t *testing.T) {
 	assert.True(detail.Repo.Capabilities.ReadComments)
 	assert.False(detail.Repo.Capabilities.CommentMutation)
 	assert.Nil(detail.Warnings)
+
+	since := url.QueryEscape(now.Add(-time.Hour).Format(time.RFC3339))
+	repoFilter := url.QueryEscape("azure_devops|dev.azure.com/AcmeOrg/Payments/Service")
+	rawActivity := doJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since+"&repo="+repoFilter, nil)
+	require.Equal(http.StatusOK, rawActivity.Code, rawActivity.Body.String())
+	var activity activityResponse
+	require.NoError(json.NewDecoder(rawActivity.Body).Decode(&activity))
+	for _, item := range activity.Items {
+		assert.NotEqual("approval", item.ActivityType)
+	}
 
 	rawFiles := doJSON(t, srv, http.MethodGet, "/api/v1/pulls/azure_devops/AcmeOrg%2FPayments/Service/17/files", nil)
 	require.Equal(http.StatusOK, rawFiles.Code, rawFiles.Body.String())

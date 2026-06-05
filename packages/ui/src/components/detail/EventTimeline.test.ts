@@ -2484,6 +2484,26 @@ describe("EventTimeline", () => {
     expect(screen.getAllByText("Merged")).toHaveLength(2);
   });
 
+  it("renders approval events as compact timeline rows", () => {
+    render(EventTimeline, {
+      props: {
+        events: [makeEvent({
+          EventType: "approval",
+          Author: "Grace Hopper",
+          Summary: "approved this pull request",
+          Body: "Grace Hopper approved this pull request.",
+        })],
+      },
+    });
+
+    const label = screen.getByText("Approved");
+    expect(label).toBeTruthy();
+    expect(label.closest(".kit-timeline-item")?.classList.contains("kit-timeline-item--tone-success")).toBe(true);
+    expect(screen.getByText("Grace Hopper")).toBeTruthy();
+    expect(screen.getByText("approved this pull request")).toBeTruthy();
+    expect(document.querySelector(".event--compact")).not.toBeNull();
+  });
+
   it("renders system events as compact rows", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2024-06-01T16:00:00Z"));

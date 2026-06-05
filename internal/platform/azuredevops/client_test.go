@@ -298,6 +298,33 @@ func TestNormalizeMergeRequestTimelineEventsIncludesMergedSystemEvents(t *testin
 	assert.Equal(t, time.Date(2026, 5, 21, 12, 6, 0, 0, time.UTC), latestEventTime(events))
 }
 
+func TestNormalizeMergeRequestTimelineEventsIncludesApprovalSystemEvents(t *testing.T) {
+	ref := platform.RepoRef{
+		Platform: platform.KindAzureDevOps,
+		Host:     "dev.azure.com",
+		Owner:    "AcmeOrg/Payments",
+		Name:     "Service",
+		RepoPath: "AcmeOrg/Payments/Service",
+	}
+
+	events := NormalizeMergeRequestTimelineEvents(ref, 17, []threadDTO{{
+		ID: 55,
+		Comments: []commentDTO{
+			{ID: 1001, CommentType: "text", Content: "Looks good", PublishedDate: "2026-05-21T12:00:00Z", Author: identityDTO{DisplayName: "Grace Hopper"}},
+			{ID: 1002, CommentType: "system", Content: "<a href=\"#\">Grace Hopper</a> approved this pull request.", PublishedDate: "2026-05-21T12:07:00Z", Author: identityDTO{DisplayName: "Grace Hopper"}},
+		},
+	}}, nil)
+
+	require.Len(t, events, 2)
+	assert.Equal(t, "issue_comment", events[0].EventType)
+	assert.Equal(t, "approval", events[1].EventType)
+	assert.Equal(t, "approved this pull request", events[1].Summary)
+	assert.Equal(t, "<a href=\"#\">Grace Hopper</a> approved this pull request.", events[1].Body)
+	assert.Equal(t, "Grace Hopper", events[1].Author)
+	assert.Equal(t, "azure_devops:dev.azure.com:AcmeOrg/Payments/Service:mr:17:thread:55:comment:1002", events[1].DedupeKey)
+	assert.Equal(t, time.Date(2026, 5, 21, 12, 7, 0, 0, time.UTC), latestEventTime(events))
+}
+
 func TestNormalizeMergeRequestTimelineEventsAddsIterationEvents(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

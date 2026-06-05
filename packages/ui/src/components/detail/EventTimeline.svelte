@@ -163,6 +163,7 @@
     issue_comment: "Comment",
     comment_deleted: "Comment deleted",
     review: "Review",
+    approval: "Approved",
     commit: "Commit",
     force_push: "Force-pushed",
     iteration: "Iteration",
@@ -185,6 +186,7 @@
       case "merged":
         return "merged";
       case "commit":
+      case "approval":
         return "success";
       case "force_push":
         return "danger";
