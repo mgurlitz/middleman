@@ -205,6 +205,7 @@
     issue_comment: "Comment",
     comment_deleted: "Comment deleted",
     review: "Review",
+    approval: "Approved",
     commit: "Commit",
     force_push: "Force-pushed",
     iteration: "Iteration",
@@ -227,6 +228,7 @@
       case "merged":
         return "merged";
       case "commit":
+      case "approval":
         return "success";
       case "force_push":
         return "danger";
@@ -810,6 +812,7 @@
   function isCompactEvent(eventType: string): boolean {
     return (
       eventType === "commit" ||
+      eventType === "approval" ||
       eventType === "comment_deleted" ||
       eventType === "force_push" ||
       eventType === "cross_referenced" ||

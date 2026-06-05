@@ -93,6 +93,9 @@ func newAzureAPIFixture(t *testing.T, owner, name string) *azureAPIFixture {
 			comments := []any{map[string]any{
 				"id": 1001, "commentType": "text", "content": "Looks good from Azure DevOps",
 				"publishedDate": "2026-05-21T12:05:00Z", "author": map[string]string{"displayName": "Grace Hopper"},
+			}, map[string]any{
+				"id": 1003, "commentType": "system", "content": "Grace Hopper approved this pull request.",
+				"publishedDate": "2026-05-21T12:04:00Z", "author": map[string]string{"displayName": "Grace Hopper"},
 			}}
 			if f.merged.Load() {
 				comments = append(comments, map[string]any{
@@ -156,9 +159,11 @@ func TestAPIAzureDevOpsReadOnlySyncPersistsThroughServer(t *testing.T) {
 	assert.True(t, detail.Repo.Capabilities.ReadRepositories)
 	assert.True(t, detail.Repo.Capabilities.ReadMergeRequests)
 	assert.False(t, detail.Repo.Capabilities.CommentMutation)
-	require.Len(t, detail.Events, 2)
+	require.Len(t, detail.Events, 3)
 	assert.Equal(t, "issue_comment", detail.Events[0].EventType)
-	assert.Equal(t, "iteration", detail.Events[1].EventType)
+	assert.Equal(t, "approval", detail.Events[1].EventType)
+	assert.Equal(t, "approved this pull request", detail.Events[1].Summary)
+	assert.Equal(t, "iteration", detail.Events[2].EventType)
 	for _, suffix := range []string{"files", "diff"} {
 		raw := azureAPIRequest(t, f.srv, http.MethodGet, "/api/v1/pulls/azure_devops/AcmeOrg%2FPayments/Service/17/"+suffix, nil)
 		require.Equal(t, http.StatusOK, raw.Code, raw.Body.String())
