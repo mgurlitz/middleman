@@ -146,6 +146,9 @@ describe("prTimelineFilter", () => {
     expect(timelineEventBucket(event({ EventType: "comment_deleted" }))).toBe(
       "events",
     );
+    expect(timelineEventBucket(event({ EventType: "approval" }))).toBe(
+      "events",
+    );
     expect(timelineEventBucket(event({ EventType: "cross_referenced" }))).toBe(
       "events",
     );
