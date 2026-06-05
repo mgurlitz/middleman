@@ -63,6 +63,8 @@ export function createActivityStore(
   let viewMode = $state<ViewMode>("flat");
   let collapseThreads = $state(false);
   let collapseThreadsDefault = false;
+  let hideClosedMergedDefault = false;
+  let hideBotsDefault = false;
   let expandOverrides = $state<Set<string>>(new Set());
   let pollHandle: ReturnType<typeof setInterval> | null =
     null;
@@ -188,16 +190,25 @@ export function createActivityStore(
   ): void {
     viewMode = activity.view_mode;
     timeRange = activity.time_range;
+    hideClosedMergedDefault = activity.hide_closed;
+    hideBotsDefault = activity.hide_bots;
     hideClosedMerged = activity.hide_closed;
     hideBots = activity.hide_bots;
     collapseThreadsDefault = activity.collapse_threads;
     collapseThreads = activity.collapse_threads;
     expandOverrides = new Set();
     if (initialized) {
+      applyVisibilityFromURL();
       applyCollapsedFromURL();
       // Once a settings reload makes the live state match the new default,
-      // drop the now-redundant collapsed param so a later default change is
-      // not shadowed by a stale override.
+      // drop the now-redundant param so a later default change is not
+      // shadowed by a stale override.
+      if (hideClosedMerged === hideClosedMergedDefault) {
+        deleteVisibilityParam("hide_closed");
+      }
+      if (hideBots === hideBotsDefault) {
+        deleteVisibilityParam("hide_bots");
+      }
       if (collapseThreads === collapseThreadsDefault) {
         deleteCollapsedParam();
       }
@@ -388,6 +399,16 @@ export function createActivityStore(
     );
   }
 
+  function applyVisibilityFromURL(): void {
+    const sp = new URLSearchParams(window.location.search);
+    if (sp.has("hide_closed")) {
+      hideClosedMerged = sp.get("hide_closed") === "1";
+    }
+    if (sp.has("hide_bots")) {
+      hideBots = sp.get("hide_bots") === "1";
+    }
+  }
+
   function applyCollapsedFromURL(): void {
     const sp = new URLSearchParams(window.location.search);
     if (!sp.has("collapsed")) return;
@@ -396,13 +417,24 @@ export function createActivityStore(
     else if (v === "0") collapseThreads = false;
   }
 
+  function replaceSearchParams(sp: URLSearchParams): void {
+    const qs = sp.toString();
+    const path = window.location.pathname || getBasePath();
+    history.replaceState(null, "", path + (qs ? `?${qs}` : ""));
+  }
+
+  function deleteVisibilityParam(key: "hide_closed" | "hide_bots"): void {
+    const sp = new URLSearchParams(window.location.search);
+    if (!sp.has(key)) return;
+    sp.delete(key);
+    replaceSearchParams(sp);
+  }
+
   function deleteCollapsedParam(): void {
     const sp = new URLSearchParams(window.location.search);
     if (!sp.has("collapsed")) return;
     sp.delete("collapsed");
-    const qs = sp.toString();
-    const path = window.location.pathname || getBasePath();
-    history.replaceState(null, "", path + (qs ? `?${qs}` : ""));
+    replaceSearchParams(sp);
   }
 
   function syncFromURL(): void {
@@ -427,6 +459,7 @@ export function createActivityStore(
       if (viewParam === "flat" || viewParam === "threaded")
         viewMode = viewParam;
     }
+    applyVisibilityFromURL();
     hideDefaultBranchActivity = sp.get("hide_branch") === "1";
     applyCollapsedFromURL();
     deriveFiltersFromTypes();
@@ -445,6 +478,16 @@ export function createActivityStore(
     else sp.delete("range");
     if (viewMode !== "flat") sp.set("view", viewMode);
     else sp.delete("view");
+    if (hideClosedMerged !== hideClosedMergedDefault) {
+      sp.set("hide_closed", hideClosedMerged ? "1" : "0");
+    } else {
+      sp.delete("hide_closed");
+    }
+    if (hideBots !== hideBotsDefault) {
+      sp.set("hide_bots", hideBots ? "1" : "0");
+    } else {
+      sp.delete("hide_bots");
+    }
     if (hideDefaultBranchActivity) sp.set("hide_branch", "1");
     else sp.delete("hide_branch");
     if (collapseThreads !== collapseThreadsDefault) {
@@ -452,10 +495,7 @@ export function createActivityStore(
     } else {
       sp.delete("collapsed");
     }
-    const qs = sp.toString();
-    const path = window.location.pathname || getBasePath();
-    const url = path + (qs ? `?${qs}` : "");
-    history.replaceState(null, "", url);
+    replaceSearchParams(sp);
   }
 
   return {

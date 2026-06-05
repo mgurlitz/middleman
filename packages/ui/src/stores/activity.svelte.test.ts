@@ -6,12 +6,15 @@ const fakeClient = {
   GET: async () => ({ data: { items: [], capped: false }, error: null }),
 } as unknown as Parameters<typeof createActivityStore>[0]["client"];
 
-function settings(collapse: boolean): ActivitySettings {
+function settings(
+  collapse: boolean,
+  overrides: Partial<Pick<ActivitySettings, "hide_closed" | "hide_bots">> = {},
+): ActivitySettings {
   return {
     view_mode: "threaded",
     time_range: "7d",
-    hide_closed: false,
-    hide_bots: false,
+    hide_closed: overrides.hide_closed ?? false,
+    hide_bots: overrides.hide_bots ?? false,
     collapse_threads: collapse,
   };
 }
@@ -116,7 +119,7 @@ describe("activity store collapse state", () => {
   });
 });
 
-describe("activity store default-branch visibility", () => {
+describe("activity store visibility persistence", () => {
   it("shows default-branch activity by default and persists the hide flag", () => {
     const s = makeStore();
     s.initializeFromMount();
@@ -133,5 +136,73 @@ describe("activity store default-branch visibility", () => {
     next.setHideDefaultBranchActivity(false);
     next.syncToURL();
     expect(new URLSearchParams(window.location.search).has("hide_branch")).toBe(false);
+  });
+
+  it("persists hide closed/merged across reloads", () => {
+    const s = makeStore();
+    s.initializeFromMount();
+    expect(s.getHideClosedMerged()).toBe(false);
+
+    s.setHideClosedMerged(true);
+    s.syncToURL();
+    expect(new URLSearchParams(window.location.search).get("hide_closed")).toBe("1");
+
+    const next = makeStore();
+    next.initializeFromMount();
+    expect(next.getHideClosedMerged()).toBe(true);
+
+    next.setHideClosedMerged(false);
+    next.syncToURL();
+    expect(new URLSearchParams(window.location.search).has("hide_closed")).toBe(false);
+  });
+
+  it("persists hide closed/merged false overrides when the default is true", () => {
+    const s = makeStore();
+    s.hydrateDefaults(settings(false, { hide_closed: true }));
+    s.initializeFromMount();
+    expect(s.getHideClosedMerged()).toBe(true);
+
+    s.setHideClosedMerged(false);
+    s.syncToURL();
+    expect(new URLSearchParams(window.location.search).get("hide_closed")).toBe("0");
+
+    const next = makeStore();
+    next.hydrateDefaults(settings(false, { hide_closed: true }));
+    next.initializeFromMount();
+    expect(next.getHideClosedMerged()).toBe(false);
+  });
+
+  it("persists hide bots across reloads", () => {
+    const s = makeStore();
+    s.initializeFromMount();
+    expect(s.getHideBots()).toBe(false);
+
+    s.setHideBots(true);
+    s.syncToURL();
+    expect(new URLSearchParams(window.location.search).get("hide_bots")).toBe("1");
+
+    const next = makeStore();
+    next.initializeFromMount();
+    expect(next.getHideBots()).toBe(true);
+
+    next.setHideBots(false);
+    next.syncToURL();
+    expect(new URLSearchParams(window.location.search).has("hide_bots")).toBe(false);
+  });
+
+  it("persists hide bots false overrides when the default is true", () => {
+    const s = makeStore();
+    s.hydrateDefaults(settings(false, { hide_bots: true }));
+    s.initializeFromMount();
+    expect(s.getHideBots()).toBe(true);
+
+    s.setHideBots(false);
+    s.syncToURL();
+    expect(new URLSearchParams(window.location.search).get("hide_bots")).toBe("0");
+
+    const next = makeStore();
+    next.hydrateDefaults(settings(false, { hide_bots: true }));
+    next.initializeFromMount();
+    expect(next.getHideBots()).toBe(false);
   });
 });
