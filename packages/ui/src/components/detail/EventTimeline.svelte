@@ -114,6 +114,7 @@
     issue_comment: "Comment",
     comment_deleted: "Comment deleted",
     review: "Review",
+    approval: "Approved",
     commit: "Commit",
     force_push: "Force-pushed",
     iteration: "Iteration",
@@ -130,6 +131,7 @@
     issue_comment: "var(--accent-blue)",
     comment_deleted: "var(--text-muted)",
     review: "var(--accent-purple)",
+    approval: "var(--accent-green)",
     review_comment: "var(--accent-purple)",
     commit: "var(--accent-green)",
     force_push: "var(--accent-red)",
@@ -561,6 +563,7 @@
     return (
       eventType === "commit" ||
       eventType === "comment_deleted" ||
+      eventType === "approval" ||
       eventType === "force_push" ||
       eventType === "merged" ||
       eventType === "cross_referenced" ||

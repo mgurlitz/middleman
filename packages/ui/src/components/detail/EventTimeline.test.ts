@@ -1176,6 +1176,26 @@ describe("EventTimeline", () => {
     expect(screen.getAllByText("Merged")).toHaveLength(2);
   });
 
+  it("renders approval events as compact timeline rows", () => {
+    render(EventTimeline, {
+      props: {
+        events: [makeEvent({
+          EventType: "approval",
+          Author: "Grace Hopper",
+          Summary: "approved this pull request",
+          Body: "Grace Hopper approved this pull request.",
+        })],
+      },
+    });
+
+    const label = screen.getByText("Approved");
+    expect(label).toBeTruthy();
+    expect(label.getAttribute("style")).toContain("var(--accent-green)");
+    expect(screen.getByText("Grace Hopper")).toBeTruthy();
+    expect(screen.getByText("approved this pull request")).toBeTruthy();
+    expect(document.querySelector(".event--compact")).not.toBeNull();
+  });
+
   it("renders system events as compact rows", () => {
     render(EventTimeline, {
       props: {

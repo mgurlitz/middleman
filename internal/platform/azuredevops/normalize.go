@@ -3,6 +3,8 @@ package azuredevops
 import (
 	"encoding/json"
 	"fmt"
+	"html"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -292,16 +294,59 @@ func normalizeThreadCommentEvent(
 		event.Body = body
 		return event, true
 	case "system":
-		if !isMergedSystemComment(body) {
+		eventType, summary, ok := normalizeSystemCommentEvent(body)
+		if !ok {
 			return platform.MergeRequestEvent{}, false
 		}
-		event.EventType = "merged"
-		event.Summary = "Merged"
+		event.EventType = eventType
+		event.Summary = summary
 		event.Body = body
 		return event, true
 	default:
 		return platform.MergeRequestEvent{}, false
 	}
+}
+
+var systemCommentTagPattern = regexp.MustCompile(`<[^>]+>`)
+
+func normalizeSystemCommentEvent(body string) (eventType, summary string, ok bool) {
+	normalized := normalizeSystemCommentBody(body)
+	switch {
+	case isApprovalSystemComment(normalized):
+		return "approval", approvalSummary(normalized), true
+	case isMergedSystemComment(normalized):
+		return "merged", "Merged", true
+	default:
+		return "", "", false
+	}
+}
+
+func normalizeSystemCommentBody(body string) string {
+	unescaped := html.UnescapeString(strings.TrimSpace(body))
+	stripped := systemCommentTagPattern.ReplaceAllString(unescaped, " ")
+	return strings.Join(strings.Fields(stripped), " ")
+}
+
+func isApprovalSystemComment(body string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(body))
+	if normalized == "" {
+		return false
+	}
+	if strings.Contains(normalized, "not approved") || strings.Contains(normalized, "unapproved") {
+		return false
+	}
+	return strings.Contains(normalized, "approved with suggestions") ||
+		strings.Contains(normalized, "approved this pull request") ||
+		strings.Contains(normalized, "approved the pull request") ||
+		strings.Contains(normalized, "approved")
+}
+
+func approvalSummary(body string) string {
+	normalized := strings.ToLower(strings.TrimSpace(body))
+	if strings.Contains(normalized, "approved with suggestions") {
+		return "approved with suggestions"
+	}
+	return "approved this pull request"
 }
 
 func isMergedSystemComment(body string) bool {
