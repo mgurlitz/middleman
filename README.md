@@ -492,3 +492,10 @@ see the [NOTICE](NOTICE) file.
 
 A commercial license is available for uses not permitted by ELv2. For commercial
 licensing, contact [Kenn Software](https://kenn.io) at info@kenn.io.
+
+### ADO branch licensing note
+
+This `ado` branch is rebased on upstream ELv2 code and should be treated as an
+ELv2 source-available distribution with Azure DevOps-specific modifications. The
+latest MIT-only ADO snapshot from before this rebase is preserved at tag
+`v0.2.4-ado-mit` (`d02187d`) for anyone who needs the pre-ELv2 fork state.
