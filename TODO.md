@@ -6,7 +6,7 @@
 - [x] Replay Azure DevOps approval timeline events.
 - [x] Reconcile saved Activity filters with upstream's persistence changes.
 - [x] Replay ADO branch licensing documentation.
-- [ ] Replay Azure clone token rotation and Windows Git isolation fixes.
+- [x] Replay Azure clone token rotation and Windows Git isolation fixes.
 - [ ] Replay final Azure DevOps runtime integration fixes.
 - [ ] Verify preservation of existing Azure UUID records across upstream schema upgrades.
 - [ ] Run affected backend/frontend tests and complete the rebase.

@@ -3,6 +3,8 @@ package gitclone
 import (
 	"context"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -108,6 +110,35 @@ func TestValidateRemoteURLHostAcceptsWindowsLocalPath(t *testing.T) {
 	err := validateRemoteURLHost("github", "github.com", `C:\tmp\acme\widget.git`)
 
 	require.NoError(t, err)
+}
+
+func TestGitCommandEnvUsesRealGlobalConfigPath(t *testing.T) {
+	assert := assert.New(t)
+	runner, _, err := New(t.TempDir(), nil).gitRunnerAuthed(
+		t.Context(), azureTestTokenSource("azure-token"), "azure_devops", "dev.azure.com", false,
+	)
+	require.NoError(t, err)
+	env := envMap(runner.Command(t.Context(), t.TempDir(), "config", "--list").Env)
+
+	globalConfig := env["GIT_CONFIG_GLOBAL"]
+	assert.NotEmpty(globalConfig)
+	if runtime.GOOS == "windows" {
+		assert.NotEqual("NUL", strings.ToUpper(globalConfig))
+	}
+	out, err := runner.Output(t.Context(), t.TempDir(), "config", "--get", "http.https://dev.azure.com/.extraheader")
+	require.NoError(t, err)
+	assert.Equal("Authorization: Bearer azure-token", strings.TrimSpace(string(out)))
+}
+
+func envMap(env []string) map[string]string {
+	out := make(map[string]string, len(env))
+	for _, item := range env {
+		key, value, ok := strings.Cut(item, "=")
+		if ok {
+			out[key] = value
+		}
+	}
+	return out
 }
 
 func TestClonePathIncludesHost(t *testing.T) {
