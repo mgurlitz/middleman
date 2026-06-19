@@ -586,6 +586,46 @@ func TestBuildProviderStartupKeepsForgeProviderHostsDistinct(t *testing.T) {
 	assert.NotNil(giteaReader)
 }
 
+func TestBuildProviderStartupRegistersAzureDevOpsWithoutStoredToken(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	set := tokenauth.NewSourceSet(tokenauth.Options{})
+	descriptor := tokenauth.Descriptor{Key: tokenauth.Key{
+		Platform: string(platform.KindAzureDevOps),
+		Host:     platform.DefaultAzureDevOpsHost,
+	}}
+	managed := set.Upsert(descriptor)
+	called := false
+
+	startup, err := buildProviderStartup(
+		t.Context(), database, &config.Config{}, set,
+		map[string]tokenauth.Source{
+			providerHostKey(string(platform.KindAzureDevOps), platform.DefaultAzureDevOpsHost): managed,
+		},
+		map[string]providerFactory{
+			string(platform.KindAzureDevOps): func(input providerFactoryInput) (providerFactoryOutput, error) {
+				called = true
+				assert.Equal(platform.DefaultAzureDevOpsHost, input.host)
+				assert.Equal(descriptor, input.tokenSource.Descriptor())
+				return providerFactoryOutput{provider: mainTestRepositoryReader{
+					kind: platform.KindAzureDevOps,
+					host: input.host,
+				}}, nil
+			},
+		}, nil,
+	)
+	require.NoError(err)
+	assert.True(called)
+	assert.NotSame(managed, startup.cloneSources[descriptor.Key])
+
+	reader, err := startup.registry.RepositoryReader(
+		platform.KindAzureDevOps, platform.DefaultAzureDevOpsHost,
+	)
+	require.NoError(err)
+	assert.NotNil(reader)
+}
+
 func TestBuildProviderStartupUsesRegisteredFactoryForFutureProvider(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
