@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/url"
 	"os"
@@ -15,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	gitcmd "go.kenn.io/kit/git/cmd"
 	"golang.org/x/sync/singleflight"
 
+	"go.kenn.io/middleman/internal/gitenv"
 	"go.kenn.io/middleman/internal/procutil"
 	"go.kenn.io/middleman/internal/tokenauth"
 )
@@ -539,7 +538,7 @@ func (m *Manager) authHeader(ctx context.Context, host string) (string, error) {
 func (m *Manager) gitWithInput(
 	ctx context.Context, dir string, input []byte, args ...string,
 ) ([]byte, error) {
-	out, stderr, err := runGitCommand(ctx, newGitRunner(), dir, input, args...)
+	out, stderr, err := runGitCommand(ctx, dir, input, "", args...)
 	if err != nil {
 		return nil, wrapGitError(err, stderr)
 	}
@@ -593,35 +592,67 @@ func (m *Manager) gitNetworked(
 	return nil, wrapped
 }
 
-// runGitAuthed builds a runner with the host credential attached and runs the
-// command. Networked git has no stdin, so it takes no input.
+// runGitAuthed attaches the host credential and runs a networked git command.
+// Networked git has no stdin.
 func (m *Manager) runGitAuthed(
 	ctx context.Context, host, dir string, args ...string,
 ) ([]byte, []byte, error) {
-	runner, err := m.gitRunnerAuthed(ctx, host)
+	header, err := m.authHeader(ctx, host)
 	if err != nil {
 		return nil, nil, err
 	}
-	return runGitCommand(ctx, runner, dir, nil, args...)
+	return runGitCommand(ctx, dir, nil, header, args...)
 }
 
-// runGitCommand runs git in dir with the given runner, bounded by the shared
-// subprocess limiter. The limiter covers every git invocation — local reads
-// and networked clone/fetch alike — because they all draw on the same process
+// runGitCommand runs git in dir with isolated config/env, bounded by the shared
+// subprocess limiter. The limiter covers every git invocation — local reads and
+// networked clone/fetch alike — because they all draw on the same process
 // capacity as the rest of the app.
 func runGitCommand(
-	ctx context.Context, runner gitcmd.Runner, dir string, input []byte, args ...string,
+	ctx context.Context, dir string, input []byte, extraHeader string, args ...string,
 ) ([]byte, []byte, error) {
-	var stdin io.Reader
+	cmd := procutil.CommandContext(ctx, "git", args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
 	if input != nil {
-		stdin = bytes.NewReader(input)
+		cmd.Stdin = bytes.NewReader(input)
 	}
-	release, err := procutil.TryAcquire(ctx, "git subprocess capacity")
-	if err != nil {
-		return nil, nil, err
+	cmd.Env = gitCommandEnv(extraHeader)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := procutil.Output(ctx, cmd, "git subprocess capacity")
+	return out, stderr.Bytes(), err
+}
+
+func gitCommandEnv(extraHeader string) []string {
+	env := append(gitenv.StripAll(os.Environ()),
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_CONFIG_NOSYSTEM=1",
+	)
+	if nullConfig := gitenv.NullConfigPath(); nullConfig != "" {
+		env = append(env, "GIT_CONFIG_GLOBAL="+nullConfig)
 	}
-	defer release()
-	return runner.Run(ctx, dir, stdin, args...)
+	config := []struct {
+		key   string
+		value string
+	}{
+		{key: "gc.auto", value: "0"},
+		{key: "maintenance.auto", value: "false"},
+	}
+	if extraHeader != "" {
+		config = append(config, struct {
+			key   string
+			value string
+		}{key: "http.extraHeader", value: extraHeader})
+	}
+	for i, item := range config {
+		env = append(env,
+			fmt.Sprintf("GIT_CONFIG_KEY_%d=%s", i, item.key),
+			fmt.Sprintf("GIT_CONFIG_VALUE_%d=%s", i, item.value),
+		)
+	}
+	return append(env, fmt.Sprintf("GIT_CONFIG_COUNT=%d", len(config)))
 }
 
 func wrapGitError(err error, stderr []byte) error {
@@ -691,43 +722,6 @@ func (m *Manager) invalidateTokenSource(host string) bool {
 	}
 	source.Invalidate()
 	return true
-}
-
-// newGitRunner returns a runner with kit's automation defaults: inherited
-// GIT_* variables are stripped, global/system config is ignored, and terminal
-// prompts are disabled.
-func newGitRunner() gitcmd.Runner {
-	return gitcmd.New()
-}
-
-// gitRunnerAuthed returns a runner with the host's token attached for
-// networked operations. With no source configured for the host it returns the
-// plain runner.
-func (m *Manager) gitRunnerAuthed(ctx context.Context, host string) (gitcmd.Runner, error) {
-	runner := newGitRunner()
-	if source := m.bearerSources[host]; source != nil {
-		token, err := source.Token(ctx)
-		if err != nil {
-			return runner, fmt.Errorf("resolve git bearer token for host %s: %w", host, err)
-		}
-		if token != "" {
-			runner = runner.WithConfig("http.extraHeader", "Authorization: Bearer "+token)
-		}
-		return runner, nil
-	}
-	source := m.tokenSources[host]
-	if source == nil {
-		return runner, nil
-	}
-	token, err := source.Token(ctx)
-	if err != nil {
-		return runner, fmt.Errorf("resolve git token for host %s: %w", host, err)
-	}
-	if token != "" {
-		// GitHub's smart HTTP endpoint expects Basic auth credentials.
-		runner = runner.WithBasicAuth("x-access-token", token)
-	}
-	return runner, nil
 }
 
 // isNotFoundError checks if git stderr indicates a missing object or ref.
