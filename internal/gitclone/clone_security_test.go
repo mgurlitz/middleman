@@ -3,6 +3,8 @@ package gitclone
 import (
 	"context"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -107,6 +109,31 @@ func TestValidateRemoteURLHostAcceptsWindowsLocalPath(t *testing.T) {
 	err := validateRemoteURLHost("github.com", `C:\tmp\acme\widget.git`)
 
 	require.NoError(t, err)
+}
+
+func TestGitCommandEnvUsesRealGlobalConfigPath(t *testing.T) {
+	assert := assert.New(t)
+	env := envMap(gitCommandEnv("Authorization: Bearer azure-token"))
+
+	globalConfig := env["GIT_CONFIG_GLOBAL"]
+	assert.NotEmpty(globalConfig)
+	if runtime.GOOS == "windows" {
+		assert.NotEqual("NUL", strings.ToUpper(globalConfig))
+	}
+	assert.Equal("3", env["GIT_CONFIG_COUNT"])
+	assert.Equal("http.extraHeader", env["GIT_CONFIG_KEY_2"])
+	assert.Equal("Authorization: Bearer azure-token", env["GIT_CONFIG_VALUE_2"])
+}
+
+func envMap(env []string) map[string]string {
+	out := make(map[string]string, len(env))
+	for _, item := range env {
+		key, value, ok := strings.Cut(item, "=")
+		if ok {
+			out[key] = value
+		}
+	}
+	return out
 }
 
 func TestClonePathIncludesHost(t *testing.T) {
