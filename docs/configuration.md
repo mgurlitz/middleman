@@ -39,6 +39,17 @@ repo_path = "group/subgroup/project"
 Repository identity includes `platform`, `platform_host`, `owner`, and `name`.
 Keep `repo_path` when the provider uses nested namespaces or canonical casing.
 
+On the `ado` branch, Azure DevOps repositories use `ORG/PROJECT` as the owner
+and authenticate through an existing `az login` session:
+
+```toml
+[[repos]]
+platform = "azure_devops"
+owner = "AcmeOrg/Payments"
+name = "Service"
+repo_path = "AcmeOrg/Payments/Service"
+```
+
 ## Credentials
 
 Credentials are scoped by provider and host:

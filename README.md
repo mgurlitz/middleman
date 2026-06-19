@@ -60,6 +60,10 @@ The Repositories panel selects provider hosts and repository patterns. Configure
 non-GitHub and explicit credentials through environment variables or
 `~/.kenn/forge/config.toml`; see [Configuration](docs/configuration.md).
 
+This `ado` branch additionally supports read-only Azure DevOps pull requests
+using Azure CLI authentication. See
+[Azure DevOps integration notes](docs/azure-devops-upstream-notes.md).
+
 Local workspaces require Git and tmux on a Unix-like host. The Windows release
 supports the dashboard and provider actions. Use WSL or a remote Unix-like Kenn
 Forge host when you need workspace sessions.
@@ -76,3 +80,7 @@ kenn-forge is licensed under the [Elastic License 2.0](LICENSE). Contributions
 made before the relicense remain available under the MIT License; see
 [NOTICE](NOTICE). Contact [Kenn Software](https://kenn.io) at info@kenn.io for
 commercial licensing.
+
+The Azure DevOps changes on this `ado` branch are an ELv2 source-available
+distribution. The latest MIT-only ADO snapshot remains available at tag
+`v0.2.4-ado-mit` (`d02187d`).
