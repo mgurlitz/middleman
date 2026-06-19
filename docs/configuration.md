@@ -89,6 +89,19 @@ menu on its Settings row and choose "Hide from UI". Syncing continues and
 direct links keep working; choose "Show in UI" to bring it back. Hiding
 applies to exact repositories, not glob patterns.
 
+### Azure DevOps
+
+On the `ado` branch, Azure DevOps repositories use `ORG/PROJECT` as the owner
+and authenticate through an existing `az login` session:
+
+```toml
+[[repos]]
+platform = "azure_devops"
+owner = "AcmeOrg/Payments"
+name = "Service"
+repo_path = "AcmeOrg/Payments/Service"
+```
+
 ## Credentials
 
 Credentials are scoped by provider and host:
