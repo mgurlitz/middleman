@@ -3,6 +3,7 @@ package gitclone
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -493,6 +494,46 @@ func (m *Manager) git(
 	ctx context.Context, dir string, args ...string,
 ) ([]byte, error) {
 	return m.gitWithInput(ctx, dir, nil, args...)
+}
+
+func gitCommandNeedsAuth(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	switch args[0] {
+	case "clone", "fetch":
+		return true
+	case "remote":
+		return len(args) >= 4 && args[1] == "set-head" && args[3] == "-a"
+	default:
+		return false
+	}
+}
+
+func (m *Manager) authHeader(ctx context.Context, host string) (string, error) {
+	if source := m.bearerSources[host]; source != nil {
+		token, err := source.Token(ctx)
+		if err != nil {
+			return "", fmt.Errorf("resolve git bearer token for host %s: %w", host, err)
+		}
+		if token == "" {
+			return "", nil
+		}
+		return "Authorization: Bearer " + token, nil
+	}
+	source := m.tokenSources[host]
+	if source == nil {
+		return "", nil
+	}
+	token, err := source.Token(ctx)
+	if err != nil {
+		return "", fmt.Errorf("resolve git token for host %s: %w", host, err)
+	}
+	if token == "" {
+		return "", nil
+	}
+	cred := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + token))
+	return "Authorization: Basic " + cred, nil
 }
 
 func (m *Manager) gitWithInput(

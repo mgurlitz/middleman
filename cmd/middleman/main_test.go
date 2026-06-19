@@ -618,15 +618,25 @@ func TestBuildProviderStartupRegistersAzureDevOpsProviderWithoutStartupToken(t *
 
 	database := dbtest.Open(t)
 	called := false
+	set := tokenauth.NewSourceSet(tokenauth.Options{})
+	azureSource := tokenauth.NewManagedSource(tokenauth.Descriptor{
+		Key: tokenauth.Key{
+			Platform: string(platform.KindAzureDevOps),
+			Host:     platform.DefaultAzureDevOpsHost,
+		},
+	}, tokenauth.Options{})
 	startup, err := buildProviderStartup(
 		database,
 		&config.Config{},
-		map[string]string{providerHostKey(string(platform.KindAzureDevOps), platform.DefaultAzureDevOpsHost): ""},
+		set,
+		map[string]tokenauth.Source{
+			providerHostKey(string(platform.KindAzureDevOps), platform.DefaultAzureDevOpsHost): azureSource,
+		},
 		map[string]providerFactory{
 			string(platform.KindAzureDevOps): func(input providerFactoryInput) (providerFactoryOutput, error) {
 				called = true
 				assert.Equal(platform.DefaultAzureDevOpsHost, input.host)
-				assert.Empty(input.token)
+				assert.Same(azureSource, input.tokenSource)
 				return providerFactoryOutput{provider: mainTestRepositoryReader{
 					kind: platform.KindAzureDevOps,
 					host: input.host,
@@ -636,7 +646,7 @@ func TestBuildProviderStartupRegistersAzureDevOpsProviderWithoutStartupToken(t *
 	)
 	require.NoError(err)
 	assert.True(called)
-	assert.Empty(startup.cloneTokens)
+	assert.Contains(startup.cloneAuth, platform.DefaultAzureDevOpsHost)
 
 	reader, err := startup.registry.RepositoryReader(platform.KindAzureDevOps, platform.DefaultAzureDevOpsHost)
 	require.NoError(err)

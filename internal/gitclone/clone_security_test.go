@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/middleman/internal/tokenauth"
 )
 
 func TestValidateRemoteURLHostRejectsMismatchedHTTPSHost(t *testing.T) {
@@ -111,7 +112,16 @@ func TestAuthHeaderUsesAzureBearerTokenSource(t *testing.T) {
 func TestAuthHeaderUsesBasicTokenForDefaultHosts(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	mgr := New(t.TempDir(), map[string]string{"github.com": "gh-token"})
+	t.Setenv("GITHUB_TEST_TOKEN", "gh-token")
+	mgr := New(t.TempDir(), map[string]tokenauth.Source{
+		"github.com": tokenauth.NewManagedSource(tokenauth.Descriptor{
+			Key: tokenauth.Key{Platform: "github", Host: "github.com"},
+			Candidates: []tokenauth.Candidate{{
+				Kind:    tokenauth.SourceKindEnv,
+				EnvName: "GITHUB_TEST_TOKEN",
+			}},
+		}, tokenauth.Options{}),
+	})
 
 	header, err := mgr.authHeader(context.Background(), "github.com")
 	require.NoError(err)
