@@ -28,6 +28,18 @@ const prRef = {
 };
 
 describe("router /pulls files route", () => {
+  it("resolves Azure aliases and encoded nested owners with the provider default host", () => {
+    navigate("/pulls/ado/Example%20Org%2FExample%20Project/Example%20Repo/17");
+    expect(getSelectedPRFromRoute()).toEqual({
+      provider: "ado",
+      platformHost: "dev.azure.com",
+      owner: "Example Org/Example Project",
+      name: "Example Repo",
+      repoPath: "Example Org/Example Project/Example Repo",
+      number: 17,
+    });
+  });
+
   beforeEach(() => {
     navigate("/pulls");
   });

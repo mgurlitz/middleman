@@ -5,7 +5,7 @@ import {
   type RepositoryRouteRef,
   type RoutedItemRef,
 } from "../routes.js";
-import { canonicalProvider } from "../api/provider-routes.js";
+import { canonicalProvider, providerDefaultHost as defaultPlatformHost } from "../api/provider-routes.js";
 
 export type RepoRef = RepositoryRouteRef;
 export type NumberedItemRef = NumberedRouteItemRef;
@@ -96,17 +96,6 @@ function stripBase(path: string): string {
 
 function currentLocationPath(): string {
   return window.location.pathname + window.location.search + window.location.hash;
-}
-
-const defaultPlatformHosts: Record<string, string> = {
-  github: "github.com",
-  gitlab: "gitlab.com",
-  forgejo: "codeberg.org",
-  gitea: "gitea.com",
-};
-
-function defaultPlatformHost(provider: string): string | undefined {
-  return defaultPlatformHosts[canonicalProvider(provider)];
 }
 
 function decodeRouteSegment(segment: string): string | undefined {
