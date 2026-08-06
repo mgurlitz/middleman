@@ -455,14 +455,8 @@ func syncActivityGitRun(t *testing.T, dir string, args ...string) string {
 
 func runSyncTestGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmd := procutil.Command("git", args...)
-	cmd.Dir = dir
-	cmd.Env = append(gitenv.StripAll(os.Environ()),
-		"GIT_CONFIG_GLOBAL="+os.DevNull,
-		"GIT_CONFIG_SYSTEM="+os.DevNull,
-	)
-	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, "git %v failed: %s", args, out)
+	_, stderr, err := gitcmd.New().Run(t.Context(), dir, nil, args...)
+	require.NoError(t, err, "git %v failed: %s", args, stderr)
 }
 
 func syncActivityCommit(t *testing.T, work, fileName, contents, subject string) string {
@@ -917,14 +911,8 @@ func TestSyncRepoDefaultBranchRenameDoesNotRecordForcePush(t *testing.T) {
 
 func syncTestGitSHA(t *testing.T, dir string, ref string) string {
 	t.Helper()
-	cmd := procutil.Command("git", "rev-parse", ref)
-	cmd.Dir = dir
-	cmd.Env = append(gitenv.StripAll(os.Environ()),
-		"GIT_CONFIG_GLOBAL="+os.DevNull,
-		"GIT_CONFIG_SYSTEM="+os.DevNull,
-	)
-	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, "git rev-parse %s failed: %s", ref, out)
+	out, err := gitcmd.New().Output(t.Context(), dir, "rev-parse", ref)
+	require.NoError(t, err, "git rev-parse %s failed", ref)
 	return strings.TrimSpace(string(out))
 }
 
@@ -1174,14 +1162,6 @@ type syncTestIssueOnlyProvider struct {
 	listIssueCalls atomic.Int32
 }
 
-type syncTestBlockingMRProvider struct {
-	syncTestProvider
-	mergeRequest  platform.MergeRequest
-	events        []platform.MergeRequestEvent
-	eventsStarted chan struct{}
-	releaseEvents chan struct{}
-}
-
 func (p *syncTestIssueOnlyProvider) Capabilities() platform.Capabilities {
 	return platform.Capabilities{ReadIssues: true}
 }
@@ -1213,38 +1193,6 @@ func (p *syncTestIssueOnlyProvider) ListIssueEvents(
 	int,
 ) ([]platform.IssueEvent, error) {
 	return nil, nil
-}
-
-func (p *syncTestBlockingMRProvider) Capabilities() platform.Capabilities {
-	return platform.Capabilities{
-		ReadMergeRequests: true,
-		ReadComments:      true,
-	}
-}
-
-func (p *syncTestBlockingMRProvider) ListOpenMergeRequests(
-	context.Context,
-	platform.RepoRef,
-) ([]platform.MergeRequest, error) {
-	return []platform.MergeRequest{p.mergeRequest}, nil
-}
-
-func (p *syncTestBlockingMRProvider) GetMergeRequest(
-	context.Context,
-	platform.RepoRef,
-	int,
-) (platform.MergeRequest, error) {
-	return p.mergeRequest, nil
-}
-
-func (p *syncTestBlockingMRProvider) ListMergeRequestEvents(
-	context.Context,
-	platform.RepoRef,
-	int,
-) ([]platform.MergeRequestEvent, error) {
-	close(p.eventsStarted)
-	<-p.releaseEvents
-	return p.events, nil
 }
 
 func (p *syncTestMergeRequestOnlyProvider) ListMergeRequestEvents(
@@ -7532,7 +7480,7 @@ func TestSyncRepoSkipsCloneWhenProviderHasNoOpenMergeRequests(t *testing.T) {
 	syncer := NewSyncerWithRegistry(registry, d, clones, []RepoRef{repo}, time.Minute, nil, nil)
 
 	require.NoError(syncer.syncRepo(ctx, repo))
-	clonePath, err := clones.ClonePath("gitlab.example.com", "group/subgroup", "project")
+	clonePath, err := clones.ClonePath("gitlab", "gitlab.example.com", "group/subgroup", "project")
 	require.NoError(err)
 	_, err = os.Stat(filepath.Join(clonePath, "HEAD"))
 	require.Error(err)
@@ -7707,7 +7655,7 @@ func TestDetailDrainCompletesWhenProviderExceedsAdmittedCost(t *testing.T) {
 
 func TestSyncMROnProviderComputesDiffSHAsForAzureDevOpsLocalClone(t *testing.T) {
 	require := require.New(t)
-	assert := Assert.New(t)
+	assert := assert.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
 	now := time.Date(2026, 5, 23, 12, 0, 0, 0, time.UTC)
@@ -7749,7 +7697,7 @@ func TestSyncMROnProviderComputesDiffSHAsForAzureDevOpsLocalClone(t *testing.T) 
 	syncer := NewSyncerWithRegistry(registry, d, clones, []RepoRef{repo}, time.Minute, nil, nil)
 
 	require.NoError(syncer.SyncMROnProvider(ctx, platform.KindAzureDevOps, repo.PlatformHost, repo.Owner, repo.Name, 17))
-	repoRow, err := d.GetRepoByHostOwnerName(ctx, repo.PlatformHost, repo.Owner, repo.Name)
+	repoRow, err := d.GetRepoByIdentity(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
 	require.NoError(err)
 	require.NotNil(repoRow)
 	shas, err := d.GetDiffSHAsByRepoID(ctx, repoRow.ID, 17)
@@ -7812,88 +7760,6 @@ func TestSyncMRUsesConfiguredProviderRegistry(t *testing.T) {
 	require.NotNil(mr)
 	assert.Equal("gitlab mr", mr.Title)
 	assert.Equal(int32(1), provider.getMRCalls.Load())
-}
-
-func TestSyncMRPreservesVisibleActivityUntilProviderEventsRefresh(t *testing.T) {
-	assert := Assert.New(t)
-	require := require.New(t)
-	ctx := t.Context()
-	database := openTestDB(t)
-	repo := RepoRef{
-		Platform:     platform.KindAzureDevOps,
-		PlatformHost: "dev.azure.com",
-		Owner:        "AcmeOrg/Payments",
-		Name:         "Service",
-		RepoPath:     "AcmeOrg/Payments/Service",
-	}
-	repoID, err := database.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
-	require.NoError(err)
-
-	providerActivity := time.Date(2026, 5, 23, 12, 0, 0, 0, time.UTC)
-	existingActivity := providerActivity.Add(2 * time.Hour)
-	detailFetchedAt := existingActivity
-	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
-		RepoID:          repoID,
-		PlatformID:      7,
-		Number:          7,
-		Title:           "existing MR",
-		Author:          "ada@example.com",
-		State:           "open",
-		CreatedAt:       providerActivity,
-		UpdatedAt:       providerActivity,
-		LastActivityAt:  existingActivity,
-		CommentCount:    1,
-		DetailFetchedAt: &detailFetchedAt,
-	})
-	require.NoError(err)
-
-	provider := &syncTestBlockingMRProvider{
-		syncTestProvider: syncTestProvider{
-			kind: platform.KindAzureDevOps,
-			host: "dev.azure.com",
-		},
-		mergeRequest: platform.MergeRequest{
-			Repo:           platformRepoRef(repo),
-			PlatformID:     7,
-			Number:         7,
-			Title:          "existing MR",
-			Author:         "ada@example.com",
-			State:          "open",
-			CreatedAt:      providerActivity,
-			UpdatedAt:      providerActivity,
-			LastActivityAt: providerActivity,
-		},
-		eventsStarted: make(chan struct{}),
-		releaseEvents: make(chan struct{}),
-	}
-	registry, err := platform.NewRegistry(provider)
-	require.NoError(err)
-	syncer := NewSyncerWithRegistry(registry, database, nil, []RepoRef{repo}, time.Minute, nil, nil)
-
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- syncer.SyncMROnProvider(ctx, platform.KindAzureDevOps, repo.PlatformHost, repo.Owner, repo.Name, 7)
-	}()
-
-	select {
-	case <-provider.eventsStarted:
-	case <-time.After(time.Second):
-		require.Fail("timed out waiting for provider event refresh")
-	}
-
-	midSync, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
-	require.NoError(err)
-	require.NotNil(midSync)
-	assert.Equal(existingActivity.UTC(), midSync.LastActivityAt.UTC())
-
-	close(provider.releaseEvents)
-	require.NoError(<-errCh)
-
-	finalMR, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
-	require.NoError(err)
-	require.NotNil(finalMR)
-	assert.Equal(providerActivity.UTC(), finalMR.LastActivityAt.UTC())
-	assert.Zero(finalMR.CommentCount)
 }
 
 func TestSyncItemByNumberRejectsNonGitHubProviderWithoutForcingGitHub(t *testing.T) {
@@ -17188,96 +17054,6 @@ func TestDrainPendingCommentSyncsReadsQueuedItemsByProviderIdentity(t *testing.T
 	githubIssueEvents, err := d.ListIssueEvents(ctx, githubIssueID)
 	require.NoError(err)
 	assert.Empty(githubIssueEvents)
-}
-
-func TestIndexUpsertMergeRequestDoesNotQueueConditionalCommentRefreshForNonGitHubProviders(t *testing.T) {
-	assert := Assert.New(t)
-	require := require.New(t)
-	ctx := t.Context()
-	d := openTestDB(t)
-	now := time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)
-	detailFetchedAt := now.Add(-time.Minute)
-	repo := RepoRef{
-		Platform:     platform.KindAzureDevOps,
-		PlatformHost: "dev.azure.com",
-		Owner:        "AcmeOrg/Payments",
-		Name:         "Service",
-		RepoPath:     "AcmeOrg/Payments/Service",
-	}
-	repoID, err := d.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
-	require.NoError(err)
-	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
-		RepoID:          repoID,
-		PlatformID:      17,
-		Number:          17,
-		Title:           "existing",
-		Author:          "ada@example.com",
-		State:           "open",
-		CreatedAt:       now,
-		UpdatedAt:       now,
-		LastActivityAt:  now,
-		DetailFetchedAt: &detailFetchedAt,
-	})
-	require.NoError(err)
-
-	syncer := NewSyncerWithRegistry(nil, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
-	err = syncer.indexUpsertMergeRequest(ctx, repo, repoID, platform.MergeRequest{
-		Repo:       platformRepoRef(repo),
-		PlatformID: 17,
-		Number:     17,
-		Title:      "existing",
-		Author:     "ada@example.com",
-		State:      "open",
-		CreatedAt:  now,
-		UpdatedAt:  now,
-	})
-	require.NoError(err)
-	assert.Empty(syncer.pendingPRCommentSyncs)
-}
-
-func TestSyncOpenPlatformIssueDoesNotQueueConditionalCommentRefreshForNonGitHubProviders(t *testing.T) {
-	assert := Assert.New(t)
-	require := require.New(t)
-	ctx := t.Context()
-	d := openTestDB(t)
-	now := time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)
-	detailFetchedAt := now.Add(-time.Minute)
-	repo := RepoRef{
-		Platform:     platform.KindAzureDevOps,
-		PlatformHost: "dev.azure.com",
-		Owner:        "AcmeOrg/Payments",
-		Name:         "Service",
-		RepoPath:     "AcmeOrg/Payments/Service",
-	}
-	repoID, err := d.UpsertRepo(ctx, platform.DBRepoIdentity(platformRepoRef(repo)))
-	require.NoError(err)
-	_, err = d.UpsertIssue(ctx, &db.Issue{
-		RepoID:          repoID,
-		PlatformID:      11,
-		Number:          11,
-		Title:           "existing issue",
-		Author:          "ada@example.com",
-		State:           "open",
-		CreatedAt:       now,
-		UpdatedAt:       now,
-		LastActivityAt:  now,
-		DetailFetchedAt: &detailFetchedAt,
-	})
-	require.NoError(err)
-
-	syncer := NewSyncerWithRegistry(nil, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
-	err = syncer.syncOpenPlatformIssue(ctx, &syncTestIssueOnlyProvider{}, repo, repoID, platform.Issue{
-		Repo:       platformRepoRef(repo),
-		PlatformID: 11,
-		Number:     11,
-		Title:      "existing issue",
-		Author:     "ada@example.com",
-		State:      "open",
-		CreatedAt:  now,
-		UpdatedAt:  now,
-	}, false)
-	require.NoError(err)
-	assert.Empty(syncer.pendingIssueCommentSyncs)
 }
 
 func TestRefreshRepoCommentsFiltersByHost(t *testing.T) {

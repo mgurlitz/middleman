@@ -53,7 +53,7 @@ func TestEnabledFromEnv(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			require.NoError(t, os.Setenv(EnabledEnv, tc.value))
-			assert.Equal(t, tc.want, EnabledFromEnv())
+			assert.Equal(tc.want, EnabledFromEnv())
 		})
 	}
 }

@@ -17,14 +17,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
-	"go.kenn.io/forge/internal/gitenv"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/platform"
 	azuredevops "go.kenn.io/forge/internal/platform/azuredevops"
-	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/pullapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	gitcmd "go.kenn.io/kit/git/cmd"
 )
 
 type azureDevOpsStaticToken string
@@ -744,25 +743,13 @@ func setupAzureDevOpsCloneFixture(t *testing.T) (string, string, string) {
 
 func runAzureTestGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmd := procutil.Command("git", args...)
-	cmd.Dir = dir
-	cmd.Env = append(gitenv.StripAll(os.Environ()),
-		"GIT_CONFIG_GLOBAL="+os.DevNull,
-		"GIT_CONFIG_SYSTEM="+os.DevNull,
-	)
-	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, "git %v failed: %s", args, out)
+	_, stderr, err := gitcmd.New().Run(t.Context(), dir, nil, args...)
+	require.NoError(t, err, "git %v failed: %s", args, stderr)
 }
 
 func azureTestGitSHA(t *testing.T, dir string, ref string) string {
 	t.Helper()
-	cmd := procutil.Command("git", "rev-parse", ref)
-	cmd.Dir = dir
-	cmd.Env = append(gitenv.StripAll(os.Environ()),
-		"GIT_CONFIG_GLOBAL="+os.DevNull,
-		"GIT_CONFIG_SYSTEM="+os.DevNull,
-	)
-	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, "git rev-parse %s failed: %s", ref, out)
+	out, err := gitcmd.New().Output(t.Context(), dir, "rev-parse", ref)
+	require.NoError(t, err, "git rev-parse %s failed", ref)
 	return strings.TrimSpace(string(out))
 }
