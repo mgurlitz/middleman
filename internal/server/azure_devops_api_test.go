@@ -113,7 +113,7 @@ func newAzureAPIFixture(t *testing.T, owner, name string) *azureAPIFixture {
 			http.NotFound(w, r)
 			return
 		}
-		require.NoError(t, json.NewEncoder(w).Encode(response))
+		assert.NoError(t, json.NewEncoder(w).Encode(response))
 	}))
 	t.Cleanup(api.Close)
 	database := dbtest.Open(t)
@@ -211,7 +211,7 @@ func azureAPIRequest(t *testing.T, srv *Server, method, path string, body any) *
 	t.Helper()
 	data, err := json.Marshal(body)
 	require.NoError(t, err)
-	req := httptest.NewRequest(method, path, bytes.NewReader(data))
+	req := httptest.NewRequestWithContext(t.Context(), method, path, bytes.NewReader(data))
 	req.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	srv.ServeHTTP(response, req)

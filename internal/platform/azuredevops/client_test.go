@@ -255,13 +255,14 @@ func TestNormalizePullRequestMapsAzureFieldsAndThreads(t *testing.T) {
 	assert.Equal(t, "abc123", mr.HeadSHA)
 	assert.Equal(t, "def456", mr.BaseSHA)
 
-	events := NormalizeMergeRequestEvents(ref, 17, []threadDTO{{
+	events, err := NormalizeMergeRequestEvents(ref, 17, []threadDTO{{
 		ID: 55,
 		Comments: []commentDTO{
 			{ID: 1001, CommentType: "text", Content: "Looks good", PublishedDate: "2026-05-21T12:00:00Z", Author: identityDTO{DisplayName: "Grace Hopper"}},
 			{ID: 1002, CommentType: "system", Content: "ignored", PublishedDate: "2026-05-21T12:01:00Z", Author: identityDTO{DisplayName: "Bot"}},
 		},
 	}})
+	require.NoError(t, err)
 	require.Len(t, events, 1)
 	assert.Equal(t, "issue_comment", events[0].EventType)
 	assert.Equal(t, "Grace Hopper", events[0].Author)
@@ -280,14 +281,14 @@ func TestNormalizeMergeRequestTimelineEventsIncludesMergedSystemEvents(t *testin
 		RepoPath: "AcmeOrg/Payments/Service",
 	}
 
-	events := NormalizeMergeRequestTimelineEvents(ref, 17, []threadDTO{{
+	events, err := NormalizeMergeRequestTimelineEvents(ref, 17, []threadDTO{{
 		ID: 55,
 		Comments: []commentDTO{
 			{ID: 1001, CommentType: "text", Content: "Looks good", PublishedDate: "2026-05-21T12:00:00Z", Author: identityDTO{DisplayName: "Grace Hopper"}},
 			{ID: 1002, CommentType: "system", Content: "Merged", PublishedDate: "2026-05-21T12:06:00Z", Author: identityDTO{DisplayName: "Merge Bot"}},
 		},
 	}}, nil)
-
+	require.NoError(t, err)
 	require.Len(t, events, 2)
 	assert.Equal(t, "issue_comment", events[0].EventType)
 	assert.Equal(t, "merged", events[1].EventType)
@@ -307,14 +308,14 @@ func TestNormalizeMergeRequestTimelineEventsIncludesApprovalSystemEvents(t *test
 		RepoPath: "AcmeOrg/Payments/Service",
 	}
 
-	events := NormalizeMergeRequestTimelineEvents(ref, 17, []threadDTO{{
+	events, err := NormalizeMergeRequestTimelineEvents(ref, 17, []threadDTO{{
 		ID: 55,
 		Comments: []commentDTO{
 			{ID: 1001, CommentType: "text", Content: "Looks good", PublishedDate: "2026-05-21T12:00:00Z", Author: identityDTO{DisplayName: "Grace Hopper"}},
 			{ID: 1002, CommentType: "system", Content: "<a href=\"#\">Grace Hopper</a> approved this pull request.", PublishedDate: "2026-05-21T12:07:00Z", Author: identityDTO{DisplayName: "Grace Hopper"}},
 		},
 	}}, nil)
-
+	require.NoError(t, err)
 	require.Len(t, events, 2)
 	assert.Equal(t, "issue_comment", events[0].EventType)
 	assert.Equal(t, "approval", events[1].EventType)
@@ -356,7 +357,7 @@ func TestNormalizeMergeRequestTimelineEventsAddsIterationEvents(t *testing.T) {
 		},
 	}
 
-	events := NormalizeMergeRequestTimelineEvents(ref, 17, []threadDTO{{
+	events, err := NormalizeMergeRequestTimelineEvents(ref, 17, []threadDTO{{
 		ID: 55,
 		Comments: []commentDTO{{
 			ID:            1001,
@@ -366,6 +367,7 @@ func TestNormalizeMergeRequestTimelineEventsAddsIterationEvents(t *testing.T) {
 			Author:        identityDTO{DisplayName: "Grace Hopper"},
 		}},
 	}}, iterations)
+	require.NoError(err)
 	require.Len(events, 3)
 	assert.Equal("iteration", events[0].EventType)
 	assert.Equal("Iteration 1", events[0].Summary)
@@ -379,11 +381,11 @@ func TestNormalizeMergeRequestTimelineEventsAddsIterationEvents(t *testing.T) {
 	assert.Equal("azure_devops:dev.azure.com:AcmeOrg/Payments/Service:mr:17:iteration:2", events[2].DedupeKey)
 	assert.Equal(time.Date(2026, 5, 21, 12, 10, 0, 0, time.UTC), latestEventTime(events))
 
-	var metadata map[string]any
+	var metadata iterationEventMetadata
 	require.NoError(json.Unmarshal([]byte(events[2].MetadataJSON), &metadata))
-	assert.Equal(float64(2), metadata["iteration_id"])
-	assert.Equal("1111111222222233333334444444555555566666", metadata["compare_from_sha"])
-	assert.Equal("7777777888888899999990000000111111122222", metadata["compare_to_sha"])
+	assert.Equal(2, metadata.IterationID)
+	assert.Equal("1111111222222233333334444444555555566666", metadata.CompareFromSHA)
+	assert.Equal("7777777888888899999990000000111111122222", metadata.CompareToSHA)
 }
 
 func TestParseRepoScopeRejectsInvalidAzureOwnerShape(t *testing.T) {
@@ -394,6 +396,6 @@ func TestParseRepoScopeRejectsInvalidAzureOwnerShape(t *testing.T) {
 		Name:     "repo",
 	})
 	require.Error(t, err)
-	assert.ErrorIs(t, err, platform.ErrInvalidRepoRef)
+	require.ErrorIs(t, err, platform.ErrInvalidRepoRef)
 	assert.True(t, strings.Contains(err.Error(), "invalid_repo_ref") || strings.Contains(err.Error(), "azure_devops owner"))
 }

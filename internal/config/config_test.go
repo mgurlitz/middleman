@@ -2048,7 +2048,7 @@ repo_path = "AcmeOrg/Payments/Service"
 	assert.Equal("azure_devops", cfg.Platforms[0].Type)
 	assert.Equal("dev.azure.com", cfg.Platforms[0].Host)
 	assert.Empty(cfg.Platforms[0].TokenEnv)
-	assert.Equal("", cfg.TokenForPlatformHost("azure_devops", "dev.azure.com", ""))
+	assert.Empty(cfg.TokenForPlatformHost("azure_devops", "dev.azure.com", ""))
 }
 
 func TestLoadKeepsExistingGitHubURLInference(t *testing.T) {

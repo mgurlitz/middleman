@@ -257,7 +257,7 @@ func (c *Client) ListMergeRequestEvents(
 		repoRef.Platform = platform.KindAzureDevOps
 		repoRef.Host = c.host
 	}
-	return NormalizeMergeRequestTimelineEvents(repoRef, number, threadResponse.Value, iterationResponse.Value), nil
+	return NormalizeMergeRequestTimelineEvents(repoRef, number, threadResponse.Value, iterationResponse.Value)
 }
 
 func NewCLITokenSource() TokenSource {
@@ -528,8 +528,7 @@ func (azureCLITokenSource) Token(ctx context.Context) (string, error) {
 }
 
 func mapTokenSourceError(host string, err error) error {
-	var platformErr *platform.Error
-	if errors.As(err, &platformErr) {
+	if _, ok := errors.AsType[*platform.Error](err); ok {
 		return err
 	}
 	return &platform.Error{

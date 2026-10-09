@@ -37,6 +37,6 @@ func TestAzureRemoteIdentityUsesCanonicalRoute(t *testing.T) {
 	remote := "https://dev.azure.com/Example%20Org/Example%20Project/_git/Example%20Repo"
 	require.NoError(t, ValidateRemoteIdentity(ref, remote))
 	assert.Equal(t, "Example Org/Example Project/Example Repo", RemoteRepoPath(ref.Platform, ref.Host, remote))
-	assert.Error(t, ValidateRemoteIdentity(ref, "https://dev.azure.com/Example%20Org/Other/_git/Example%20Repo"))
-	assert.Error(t, ValidateRemoteIdentity(ref, "https://other.example/Example%20Org/Example%20Project/_git/Example%20Repo"))
+	require.Error(t, ValidateRemoteIdentity(ref, "https://dev.azure.com/Example%20Org/Other/_git/Example%20Repo"))
+	require.Error(t, ValidateRemoteIdentity(ref, "https://other.example/Example%20Org/Example%20Project/_git/Example%20Repo"))
 }

@@ -146,7 +146,7 @@ func runMigrations(rw *sql.DB) (int, error) {
 			return migratedb.NilVersion, fmt.Errorf("check Azure repository upgrade safety: %w", err)
 		}
 		if azureRepositories > 0 {
-			return migratedb.NilVersion, errors.New("Azure DevOps database requires a dedicated UUID upgrade before migration 60; keep the existing database and its backup, and do not run this build against it")
+			return migratedb.NilVersion, errors.New("legacy Azure DevOps database requires a dedicated UUID upgrade before migration 60; keep the existing database and its backup, and do not run this build against it")
 		}
 	}
 

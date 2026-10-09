@@ -222,10 +222,11 @@ func NormalizePullRequest(host string, scope repoScope, fallback platform.RepoRe
 		UpdatedAt:          updatedAt,
 		LastActivityAt:     updatedAt,
 	}
-	if state == "merged" {
+	switch state {
+	case "merged":
 		mr.MergedAt = closedAt
 		mr.MergedBy, _ = normalizeIdentity(pr.ClosedBy)
-	} else if state == "closed" {
+	case "closed":
 		mr.ClosedAt = closedAt
 	}
 	return mr
@@ -235,7 +236,7 @@ func NormalizeMergeRequestEvents(
 	repo platform.RepoRef,
 	mrNumber int,
 	threads []threadDTO,
-) []platform.MergeRequestEvent {
+) ([]platform.MergeRequestEvent, error) {
 	return NormalizeMergeRequestTimelineEvents(repo, mrNumber, threads, nil)
 }
 
@@ -244,7 +245,7 @@ func NormalizeMergeRequestTimelineEvents(
 	mrNumber int,
 	threads []threadDTO,
 	iterations []pullRequestIterationDTO,
-) []platform.MergeRequestEvent {
+) ([]platform.MergeRequestEvent, error) {
 	events := make([]platform.MergeRequestEvent, 0, len(iterations))
 	for _, thread := range threads {
 		for _, comment := range thread.Comments {
@@ -255,7 +256,10 @@ func NormalizeMergeRequestTimelineEvents(
 			events = append(events, event)
 		}
 	}
-	iterationEvents := normalizeIterationEvents(repo, mrNumber, iterations)
+	iterationEvents, err := normalizeIterationEvents(repo, mrNumber, iterations)
+	if err != nil {
+		return nil, err
+	}
 	events = append(events, iterationEvents...)
 	sort.SliceStable(events, func(i, j int) bool {
 		if events[i].CreatedAt.Equal(events[j].CreatedAt) {
@@ -263,7 +267,7 @@ func NormalizeMergeRequestTimelineEvents(
 		}
 		return events[i].CreatedAt.Before(events[j].CreatedAt)
 	})
-	return events
+	return events, nil
 }
 
 func normalizeThreadCommentEvent(
@@ -371,9 +375,9 @@ func normalizeIterationEvents(
 	repo platform.RepoRef,
 	mrNumber int,
 	iterations []pullRequestIterationDTO,
-) []platform.MergeRequestEvent {
+) ([]platform.MergeRequestEvent, error) {
 	if len(iterations) == 0 {
-		return nil
+		return nil, nil
 	}
 	sorted := append([]pullRequestIterationDTO(nil), iterations...)
 	sort.SliceStable(sorted, func(i, j int) bool {
@@ -399,7 +403,7 @@ func normalizeIterationEvents(
 			fromSHA = commitID(iteration.TargetRefCommit)
 		}
 		author, _ := normalizeIdentity(iteration.Author)
-		metadata, _ := json.Marshal(iterationEventMetadata{
+		metadata, err := json.Marshal(iterationEventMetadata{
 			IterationID:    iteration.ID,
 			Reason:         strings.TrimSpace(iteration.Reason),
 			Description:    strings.TrimSpace(iteration.Description),
@@ -409,6 +413,9 @@ func normalizeIterationEvents(
 			TargetRefSHA:   commitID(iteration.TargetRefCommit),
 			CommonRefSHA:   commitID(iteration.CommonRefCommit),
 		})
+		if err != nil {
+			return nil, fmt.Errorf("encode Azure iteration metadata: %w", err)
+		}
 		body := fmt.Sprintf("Source updated: %s -> %s", shortSHA(fromSHA), shortSHA(toSHA))
 		if fromSHA == "" {
 			body = fmt.Sprintf("Source updated to %s", shortSHA(toSHA))
@@ -432,7 +439,7 @@ func normalizeIterationEvents(
 			DedupeKey:          fmt.Sprintf("%s:%s:%s:mr:%d:iteration:%d", platform.KindAzureDevOps, repo.Host, repo.DisplayName(), mrNumber, iteration.ID),
 		})
 	}
-	return events
+	return events, nil
 }
 
 func iterationTime(iteration pullRequestIterationDTO) time.Time {
