@@ -42,7 +42,8 @@ The adapter participates in ordinary provider sync and persistence. Do not
 restore superseded sync routines or the retired `packages/ui` application tree
 when bringing in older Azure commits; current UI components live in `frontend`.
 
-Back up an existing installation before upgrading its database. The upstream
-integer-ID migration predates this Azure UUID integration; preservation of
-older Azure caches must be verified separately before using the rebased build
-against existing data.
+Back up an existing installation before upgrading its database. This build
+refuses to migrate older databases containing Azure repositories because the
+upstream integer-ID migration would delete their UUID-backed cache rows.
+Keep using the previous build with that database until a dedicated UUID upgrade
+is available. New databases support Azure UUIDs.

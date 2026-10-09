@@ -8,5 +8,5 @@
 - [x] Replay ADO branch licensing documentation.
 - [x] Replay Azure clone token rotation and Windows Git isolation fixes.
 - [x] Replay final Azure DevOps runtime integration fixes.
-- [ ] Verify preservation of existing Azure UUID records across upstream schema upgrades.
+- [x] Guard legacy Azure databases against destructive upstream migration 60; automatic UUID upgrade is not implemented.
 - [ ] Run affected backend/frontend tests and complete the rebase.

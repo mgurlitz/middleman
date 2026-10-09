@@ -18,13 +18,14 @@ import (
 )
 
 const (
-	firstLegacySchemaVersion          = 1
-	latestLegacySchemaVersion         = 3
-	migrationTableName                = "schema_migrations"
-	recreateDatabaseInstruction       = "delete the database file and let kenn-forge recreate it"
-	timestampRepairGateVersion        = 10
-	workspaceSetupMigrationVersion    = 11
-	repositoryCatalogMigrationVersion = 45
+	firstLegacySchemaVersion                  = 1
+	latestLegacySchemaVersion                 = 3
+	migrationTableName                        = "schema_migrations"
+	recreateDatabaseInstruction               = "delete the database file and let kenn-forge recreate it"
+	timestampRepairGateVersion                = 10
+	workspaceSetupMigrationVersion            = 11
+	repositoryCatalogMigrationVersion         = 45
+	integerRepositoryIdentityMigrationVersion = 60
 )
 
 //go:embed migrations/*.sql
@@ -132,6 +133,20 @@ func runMigrations(rw *sql.DB) (int, error) {
 		}
 		if err := runRepositoryCatalogMigration(rw, m); err != nil {
 			return migratedb.NilVersion, wrapMigrationError(err)
+		}
+	}
+
+	// Migration 60 deletes non-integer repository keys. Azure repositories
+	// from earlier ADO builds have verified UUIDs, not disposable legacy rows.
+	if version < integerRepositoryIdentityMigrationVersion {
+		var azureRepositories int
+		if err := rw.QueryRowContext(context.Background(),
+			`SELECT COUNT(*) FROM forge_repos WHERE platform = 'azure_devops'`,
+		).Scan(&azureRepositories); err != nil {
+			return migratedb.NilVersion, fmt.Errorf("check Azure repository upgrade safety: %w", err)
+		}
+		if azureRepositories > 0 {
+			return migratedb.NilVersion, errors.New("Azure DevOps database requires a dedicated UUID upgrade before migration 60; keep the existing database and its backup, and do not run this build against it")
 		}
 	}
 

@@ -12,6 +12,9 @@ Two pull requests can each pass the check and still merge the same migration num
 
 ## Rules
 
+- Refuse migration 60 for legacy Azure repositories: their UUIDs are verified
+  identity, not unkeyable cache rows. Keep the database intact until a dedicated
+  UUID upgrade exists (`internal/db/migrations.go::runMigrations`).
 - New migrations use the next sequential `NNNNNN_description.up.sql` and matching `.down.sql` file.
 - Applying a PR-local migration to a resettable local or preview database does not make it immutable. Reset that database to the schema baseline after rewriting the migration so its state matches the revised history.
 - Do not add compatibility columns, dual-read/write paths, repair gates, or backfills for schema states that have never shipped. Amend the PR-local migration and current code paths directly.
