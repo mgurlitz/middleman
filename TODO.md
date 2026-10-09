@@ -1,7 +1,7 @@
 - [x] Confirm upstream target: origin/main at 07b7bae0, after v0.3.0.
 - [x] Replay Nix build shell with upstream's Go 1.27 requirement.
 - [x] Replay Azure DevOps provider support against upstream architecture.
-- [ ] Replay Windows arm64 release support against current release workflow.
+- [x] Keep upstream's retired release workflow deleted; the old Windows arm64 matrix patch is obsolete.
 - [ ] Replay explicit telemetry opt-in against current telemetry implementation.
 - [ ] Replay Azure DevOps approval timeline events.
 - [ ] Reconcile saved Activity filters with upstream's persistence changes.
