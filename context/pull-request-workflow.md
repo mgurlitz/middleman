@@ -14,6 +14,9 @@ request metadata, comments, or review threads.
 - Runtime image publication belongs to the external release pipeline and only
   published releases may build release images. Do not add repository-owned image
   publication or automatic PR/mainline container builds.
+- Preserve fork-owned binary releases during upstream rebases; upstream's
+  external pipeline does not publish fork assets. Keep Windows ARM64 support
+  (`.github/workflows/release.yml::build`).
 - Public CI profiles use Namespace's [Restricted access level](https://namespace.so/docs/solutions/github-actions/runner-controls/access-levels),
   which disables workload access to Namespace features and APIs. GitHub fork
   approvals, token permissions, and secrets are separate controls.

@@ -1,7 +1,7 @@
 - [x] Confirm upstream target: origin/main at 07b7bae0, after v0.3.0.
 - [x] Replay Nix build shell with upstream's Go 1.27 requirement.
 - [x] Replay Azure DevOps provider support against upstream architecture.
-- [x] Keep upstream's retired release workflow deleted; the old Windows arm64 matrix patch is obsolete.
+- [x] Restore fork-owned tag releases, including Windows ARM64.
 - [x] Replay explicit telemetry opt-in against current telemetry implementation.
 - [x] Replay Azure DevOps approval timeline events.
 - [x] Reconcile saved Activity filters with upstream's persistence changes.
@@ -9,4 +9,5 @@
 - [x] Replay Azure clone token rotation and Windows Git isolation fixes.
 - [x] Replay final Azure DevOps runtime integration fixes.
 - [x] Guard legacy Azure databases against destructive upstream migration 60; automatic UUID upgrade is not implemented.
-- [ ] Run affected backend/frontend tests and complete the rebase.
+- [x] Validate affected sync paths and finish the rebase; unrelated full-suite runner failures remain.
+- [x] Validate release workflow, embedded frontends, and all six target archives.
